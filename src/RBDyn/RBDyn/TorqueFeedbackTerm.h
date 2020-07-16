@@ -31,7 +31,7 @@ namespace torque_control
 {
 
 typedef std::map<std::string, int> ElapsedTimeMap;
-  
+
 class TorqueFeedbackTerm
 {
  public:
@@ -43,15 +43,15 @@ class TorqueFeedbackTerm
     IntegralTermAntiWindup,
     PassivityPIDTerm
   };
-  
+
   TorqueFeedbackTerm(const std::vector<rbd::MultiBody> & mbs, int robotIndex,
                      const std::shared_ptr<rbd::ForwardDynamics> fd);
-  
+
   const Eigen::VectorXd& P() const
   {
     return P_;
   }
-  
+
   const Eigen::VectorXd& gammaD() const
   {
     return gammaD_;
@@ -67,10 +67,10 @@ class TorqueFeedbackTerm
 
   int nrDof_;
   std::shared_ptr<rbd::ForwardDynamics> fd_;
-  
+
   Eigen::VectorXd P_;
   Eigen::VectorXd gammaD_;
-  
+
   Eigen::LLT<Eigen::MatrixXd> LLT_;
 
   ElapsedTimeMap elapsed_;
@@ -78,7 +78,7 @@ class TorqueFeedbackTerm
   void computeGammaD();
 };
 
-  
+
 class IntegralTerm : public TorqueFeedbackTerm
 {
  public:
@@ -89,7 +89,7 @@ class IntegralTerm : public TorqueFeedbackTerm
     Simple,
     PassivityBased
   };
-  
+
   enum VelocityGainType
   {
     Diagonal,
@@ -100,7 +100,7 @@ class IntegralTerm : public TorqueFeedbackTerm
   IntegralTerm(const std::vector<rbd::MultiBody> & mbs, int robotIndex,
                 const std::shared_ptr<rbd::ForwardDynamics> fd,
                 IntegralTermType intglTermType, VelocityGainType velGainType,
-                double lambda, double phiSlow, double phiFast, double fastFilterWeight, 
+                double lambda, double phiSlow, double phiFast, double fastFilterWeight,
                 double timeStep);
 
   void computeGain(const rbd::MultiBody & mb,
@@ -119,9 +119,9 @@ class IntegralTerm : public TorqueFeedbackTerm
   {
     return C_;
   }
-    
+
  protected:
-    
+
   IntegralTermType intglTermType_;
   VelocityGainType velGainType_;
   double lambda_;
@@ -137,14 +137,14 @@ class IntegralTerm : public TorqueFeedbackTerm
 
   double phiSlow_;
   double phiFast_;
-  double fastFilterWeight_; 
+  double fastFilterWeight_;
 
   double timeStep_;
 
-  
+
 };
 
- 
+
 class IntegralTermAntiWindup : public IntegralTerm
 {
  public:
@@ -160,9 +160,9 @@ class IntegralTermAntiWindup : public IntegralTerm
 			 const Eigen::Vector3d & maxAngAcc,
 			 const Eigen::VectorXd & torqueL,
 			 const Eigen::VectorXd & torqueU,
-                         double phiSlow, double phiFast, 
-                         double fastFilterWeight, double timeStep);
-  
+             double phiSlow, double phiFast,
+             double fastFilterWeight, double timeStep);
+
   void computeTerm(const rbd::MultiBody & mb,
                    const rbd::MultiBodyConfig & mbc_real,
                    const rbd::MultiBodyConfig & mbc_calc) override;
@@ -182,16 +182,16 @@ class PassivityPIDTerm : public TorqueFeedbackTerm
   PassivityPIDTerm(const std::vector<rbd::MultiBody> & mbs, int robotIndex,
                    const std::shared_ptr<rbd::ForwardDynamics> fd, double timeStep,
                    double beta, double lambda, double mu, double sigma, double cis);
-  
+
   void computeTerm(const rbd::MultiBody & mb,
                    const rbd::MultiBodyConfig & mbc_real,
                    const rbd::MultiBodyConfig & mbc_calc) override;
-  
+
   const Eigen::MatrixXd & CoriolisFactorization() const
   {
     return C_;
   }
-  
+
  private:
 
   double dt_;
@@ -207,5 +207,5 @@ class PassivityPIDTerm : public TorqueFeedbackTerm
                              const std::vector<double> & q_hat);
 };
 
- 
+
 } // namespace torque_control
