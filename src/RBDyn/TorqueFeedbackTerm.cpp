@@ -72,7 +72,7 @@ IntegralTerm::IntegralTerm(const std::vector<rbd::MultiBody> & mbs, int robotInd
     lambda_(lambda),
     coriolis_(mbs[robotIndex]),
     C_(Eigen::MatrixXd::Zero(nrDof_, nrDof_)),
-    L_(Eigen::MatrixXd::Zero(nrDof_, nrDof_)),
+    K_(Eigen::MatrixXd::Zero(nrDof_, nrDof_)),
     previousS_(Eigen::VectorXd::Zero(nrDof_)),
     fastFilteredS_(Eigen::VectorXd::Zero(nrDof_)),
     slowFilteredS_(Eigen::VectorXd::Zero(nrDof_)),
@@ -86,25 +86,21 @@ IntegralTerm::IntegralTerm(const std::vector<rbd::MultiBody> & mbs, int robotInd
 void IntegralTerm::computeGain(const rbd::MultiBody & mb,
 			       const rbd::MultiBodyConfig & mbc_real)
 {
-  Eigen::MatrixXd K;
-
   // std::cout << "Rafa, in IntegralTerm::computeTerm, fd_->H().rows() = " << fd_->H().rows() << std::endl;
-  
+
   if (velGainType_ == MassMatrix)
   {
-    K = lambda_ * fd_->H();
+    K_ = lambda_ * fd_->H();
   }
   else if (velGainType_ == MassDiagonal)
   {
-    K = lambda_ * fd_->H().diagonal().asDiagonal();
-    K.block<6, 6>(0, 0) = lambda_ * Eigen::MatrixXd::Identity(6, 6);  // Rafa, this is a test
+    K_ = lambda_ * fd_->H().diagonal().asDiagonal();
+    //K_.block<6, 6>(0, 0) = lambda_ * Eigen::MatrixXd::Identity(6, 6);  // Rafa, this is a test
   }
   else
   {
-    K = lambda_ * Eigen::MatrixXd::Identity(nrDof_, nrDof_);
+    K_ = lambda_ * Eigen::MatrixXd::Identity(nrDof_, nrDof_);
   }
-
-  // std::cout << "Rafa, in IntegralTerm::computeGain, K = " << std::endl << K << std::endl;
 
   clock_t time;
 
@@ -113,11 +109,6 @@ void IntegralTerm::computeGain(const rbd::MultiBody & mb,
     time = clock();
     C_ = coriolis_.coriolis(mb, mbc_real);
     elapsed_.at("computeFbTerm-Gain-Coriolis") = (int) (clock() - time);
-    L_ = (C_ + K);
-  }
-  else
-  {
-    L_ = K;
   }
 }
 
@@ -146,8 +137,8 @@ void IntegralTerm::computeTerm(const rbd::MultiBody & mb,
     Eigen::VectorXd filteredS = fastFilterWeight_*fastFilteredS_+(1-fastFilterWeight_)*slowFilteredS_;
 
     // std::cout << "Rafa, in computeTerm, filteredS = " << filteredS.transpose() << std::endl;
-    
-    P_ = L_ * filteredS;  // Rafa, this disabled code is just temporary... we have to use this
+
+    P_ = (K_+C_) * filteredS;  // Rafa, this disabled code is just temporary... we have to use this
     // P_ = L_ * s;
 
     // std::cout << "Rafa, in IntegralTerm::computeTerm, alphaVec_ref = " << alphaVec_ref.transpose() << std::endl;
@@ -169,21 +160,23 @@ void IntegralTerm::computeTerm(const rbd::MultiBody & mb,
 
   std::cout << "Rafa, in IntegralTerm::computeTerm for smooth transition, diff_torques = " << diff_torques.transpose() << std::endl;
 
+  Eigen::MatrixXd L = K_ + C_;
+
   if (intglTermType_ == Simple || intglTermType_ == PassivityBased)
   {
   
     if (fastFilterWeight_ < 1) {
-      slowFilteredS_ = L_.inverse() * diff_torques / (1 - fastFilterWeight_);
+      slowFilteredS_ = L.inverse() * diff_torques / (1 - fastFilterWeight_);
       fastFilteredS_.setZero();
     }
     else {
       slowFilteredS_.setZero();
-      fastFilteredS_ = L_.inverse() * diff_torques / fastFilterWeight_;
+      fastFilteredS_ = L.inverse() * diff_torques / fastFilterWeight_;
     }
     
     Eigen::VectorXd filteredS = fastFilterWeight_*fastFilteredS_+(1-fastFilterWeight_)*slowFilteredS_;
-    P_ = L_ * filteredS;
-    
+    P_ = L * filteredS;
+
     std::cout << "Rafa, in IntegralTerm::computeTerm for smooth transition, P_ = " << P_.transpose() << std::endl;
   }
 }
@@ -219,36 +212,68 @@ void IntegralTermAntiWindup::computeTerm(const rbd::MultiBody & mb,
 
     Eigen::VectorXd alphaVec_ref = rbd::dofToVector(mb, mbc_calc.alpha);
     Eigen::VectorXd alphaVec_hat = rbd::dofToVector(mb, mbc_real.alpha);
-    
+
     Eigen::VectorXd s = alphaVec_ref - alphaVec_hat;
-    P_ = L_ * s;
+
 
     Eigen::VectorXd torqueU_prime = torqueU_ * perc_;
     Eigen::VectorXd torqueL_prime = torqueL_ * perc_;
-    
+
     for (int i = 0; i < mb.nrJoints(); i++)
+    {
       if (mb.joint(i).type() == rbd::Joint::Free)
       {
         int j = mb.jointPosInDof(i);
         Eigen::Vector6d acc;
-	acc << maxAngAcc_, maxLinAcc_;
+        acc << maxAngAcc_, maxLinAcc_;
         torqueU_prime.segment<6>(j) = fd_->H().block<6, 6>(j, j).diagonal().asDiagonal() * acc;
         torqueL_prime.segment<6>(j) = -torqueU_prime.segment<6>(j);
         break;
       }
-
-    double epsilonU = (abs(P_.array() / torqueU_prime.array())).maxCoeff();
-    double epsilonL = (abs(P_.array() / torqueL_prime.array())).maxCoeff();
-    double epsilon  = std::max(epsilonU, epsilonL);
-
-    // std::cout << "Rafa, in IntegralTermAntiWindup::computeTerm, before antiwindup, P_ = " << P_.transpose() << std::endl;
-    // std::cout << "Rafa, in IntegralTermAntiWindup::computeTerm, before antiwindup, torqueU_prime = " << torqueU_prime.transpose() << std::endl;    
-    // std::cout << "Rafa, in IntegralTermAntiWindup::computeTerm, before antiwindup, epsilon = " << epsilon << std::endl;
-    
-    if (epsilon > 1) {
-      P_ /= epsilon;
     }
-    
+
+    double epsilon = 0;
+    Eigen::MatrixXd reducedK(K_);
+    int iteration =0;
+    do /// while epsilon > 1
+    {
+      P_ = reducedK * s;
+
+      std::cout << "Mehdi K" << reducedK << std::endl;
+
+      Eigen::VectorXd::Index indexU, indexL, index;
+
+      double epsilonU = (P_.array() / torqueU_prime.array()).maxCoeff(&indexU);
+      double epsilonL = (P_.array() / torqueL_prime.array()).maxCoeff(&indexL);
+      if (epsilonU>epsilonL)
+      {
+        index = indexU;
+        epsilon = epsilonU;
+      }
+      else
+      {
+        index = indexL;
+        epsilon = epsilonL;
+      }
+      if (epsilon>1)
+      {
+        ///add a small overestimation of epsilon by 1e-4
+        epsilon *= 1 + 1e-4;
+        /// multiply the row and the col corresponding to the excess value
+        reducedK.row(index) /= epsilon;
+        reducedK.col(index).segment(0,index) /= epsilon;
+        reducedK.col(index).segment(index+1, reducedK.cols()-(index+1)) /= epsilon;
+
+      }
+
+      std::cout << "Mehdi aw" << iteration++ << " " << index << " " << epsilon << std::endl;
+
+
+      P_+= C_*s;
+
+    } while (epsilon > 1); ///we add a tolerance of
+
+
     computeGammaD();
   }
 }
