@@ -128,7 +128,7 @@ class IntegralTerm : public TorqueFeedbackTerm
 
   rbd::Coriolis coriolis_;
   Eigen::MatrixXd C_;
-  Eigen::MatrixXd L_;
+  Eigen::MatrixXd K_;
 
   Eigen::VectorXd previousS_;
 
@@ -148,6 +148,9 @@ class IntegralTerm : public TorqueFeedbackTerm
 class IntegralTermAntiWindup : public IntegralTerm
 {
  public:
+
+ ///TorqueL is teh lower bound dor the torque
+ ///TorqueU is the upper bound for the torque
 
   IntegralTermAntiWindup(const std::vector<rbd::MultiBody> & mbs, int robotIndex,
 			 const std::shared_ptr<rbd::ForwardDynamics> fd,
