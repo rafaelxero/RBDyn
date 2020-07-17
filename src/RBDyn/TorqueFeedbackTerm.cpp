@@ -213,8 +213,15 @@ void IntegralTermAntiWindup::computeTerm(const rbd::MultiBody & mb,
     Eigen::VectorXd s = alphaVec_ref - alphaVec_hat;
 
 
-    Eigen::VectorXd torqueU_prime = torqueU_ * perc_;
-    Eigen::VectorXd torqueL_prime = torqueL_ * perc_;
+    Eigen::VectorXd torqueU_prime = torqueU_.array().abs() * perc_;
+    Eigen::VectorXd torqueL_prime = torqueL_.array().abs() * perc_;
+
+    Eigen::VectorXd torque_prime = Eigen::VectorXd::Zero(torqueU_prime);
+    for (int i =0 ; i<torque_prime.size(); ++i )
+    {
+      torque_prime(i)=std::min(torqueU_prime(i), torqueL_prime(i));
+    }
+
 
 
 
@@ -231,46 +238,33 @@ void IntegralTermAntiWindup::computeTerm(const rbd::MultiBody & mb,
       }
     }
 
-    double epsilon = 0;
+    double epsilonInv = 0; ///Inverse of epsilon
     Eigen::MatrixXd reducedK(K_);
     int iteration =0;
-    do /// while epsilon > 1
+    do /// while epsilonInv < 1
     {
       P_ = reducedK * s;
 
       std::cout << "Mehdi K" << reducedK << std::endl;
 
-      Eigen::VectorXd::Index indexU, indexL, index;
+      Eigen::VectorXd::Index index;
 
-      double epsilonU = (P_.array() / torqueU_prime.array()).maxCoeff(&indexU);
-      double epsilonL = (P_.array() / torqueL_prime.array()).maxCoeff(&indexL);
-      if (epsilonU>epsilonL)
-      {
-        index = indexU;
-        epsilon = epsilonU;
-      }
-      else
-      {
-        index = indexL;
-        epsilon = epsilonL;
-      }
-      if (epsilon>1)
+      epsilonInv = ( torque_prime.array() / P_.array().abs() ).minCoeff(&index);
+
+      if (epsilonInv<1)
       {
         ///add a small overestimation of epsilon by 1e-4
-        epsilon *= 1 + 1e-4;
+        epsilonInv *= 1 - 1e-4;
         /// multiply the row and the col corresponding to the excess value
-        reducedK.row(index) /= epsilon;
-        reducedK.col(index).segment(0,index) /= epsilon;
-        reducedK.col(index).segment(index+1, reducedK.cols()-(index+1)) /= epsilon;
-
+        reducedK.col(index) = (reducedK.row(index) *= epsilonInv).transpose();
       }
 
-      std::cout << "Mehdi aw" << iteration++ << " " << index << " " << epsilon << std::endl;
+      std::cout << "Mehdi aw" << iteration++ << " " << index << " " << 1/epsilonInv << std::endl;
 
 
       P_+= C_*s;
 
-    } while (epsilon > 1); ///we add a tolerance of
+    } while (epsilonInv < 1);
 
 
     computeGammaD();
