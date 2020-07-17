@@ -219,7 +219,7 @@ void IntegralTermAntiWindup::computeTerm(const rbd::MultiBody & mb,
     Eigen::VectorXd torqueU_prime = torqueU_.array().abs() * perc_;
     Eigen::VectorXd torqueL_prime = torqueL_.array().abs() * perc_;
 
-    Eigen::VectorXd torque_prime = Eigen::VectorXd::Zero(torqueU_prime);
+    Eigen::VectorXd torque_prime = Eigen::VectorXd::Zero(torqueU_prime.size());
     for (int i =0 ; i<torque_prime.size(); ++i )
     {
       torque_prime(i)=std::min(torqueU_prime(i), torqueL_prime(i));
@@ -232,9 +232,8 @@ void IntegralTermAntiWindup::computeTerm(const rbd::MultiBody & mb,
       {
         int j = mb.jointPosInDof(i);
         Eigen::Vector6d acc;
-        acc << maxAngAcc_, maxLinAcc_;
-        torqueU_prime.segment<6>(j) = fd_->H().block<6, 6>(j, j).diagonal().asDiagonal() * acc;
-        torqueL_prime.segment<6>(j) = -torqueU_prime.segment<6>(j);
+	      acc << maxAngAcc_, maxLinAcc_;
+        torque_prime.segment<6>(j) = fd_->H().block<6, 6>(j, j).diagonal().array() * acc.array();
         break;
       }
     }
@@ -265,7 +264,7 @@ void IntegralTermAntiWindup::computeTerm(const rbd::MultiBody & mb,
 
 
 
-    } while (epsilonInv < 1);
+    } while (epsilonInv < 1 );
 
     P_+= C_*s;
 
