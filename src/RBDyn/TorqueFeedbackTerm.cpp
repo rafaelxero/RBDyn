@@ -266,16 +266,8 @@ void IntegralTermAntiWindup::computeTerm(const rbd::MultiBody & mb,
           continueLoop=true;
           std::cout << "Mehdi aw" << iteration << " " << index << " " << 1/epsilonInv << std::endl;
         }
-
-
       }
-
       iteration++;
-
-
-
-
-
     }
 
     P_+= C_*s;
