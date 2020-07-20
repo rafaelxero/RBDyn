@@ -241,30 +241,42 @@ void IntegralTermAntiWindup::computeTerm(const rbd::MultiBody & mb,
     double epsilonInv = 0; ///Inverse of epsilon
     Eigen::MatrixXd reducedK(K_);
     int iteration =0;
-    do /// while epsilonInv < 1
+    bool continueLoop =true;
+    while (continueLoop)
     {
-      P_ = reducedK * s;
+
 
       std::cout << "Mehdi K" << reducedK << std::endl;
 
+      continueLoop=false;
+
       Eigen::VectorXd::Index index;
-
-      epsilonInv = ( torque_prime.array() / P_.array().abs() ).minCoeff(&index);
-
-      if (epsilonInv<1)
+      for (index=0 ; index<P_.size() ; ++index)
       {
-        ///add a small overestimation of epsilon by 1e-4
-        epsilonInv *= 1 - 1e-4;
-        /// multiply the row and the col corresponding to the excess value
-        reducedK.col(index) = (reducedK.row(index) *= epsilonInv).transpose();
+        P_(index) = reducedK.row(index) * s;
+
+        epsilonInv =  torque_prime(index) / fabs(P_(index)) ;
+
+        if (epsilonInv<1)
+        {
+          ///add a small overestimation of epsilon
+          epsilonInv *= 1 - 1e-4;
+          /// multiply the row and the col corresponding to the excess value
+          reducedK.col(index) = (reducedK.row(index) *= epsilonInv).transpose();
+          continueLoop=true;
+          std::cout << "Mehdi aw" << iteration << " " << index << " " << 1/epsilonInv << std::endl;
+        }
+
+
       }
 
-      std::cout << "Mehdi aw" << iteration++ << " " << index << " " << 1/epsilonInv << std::endl;
+      iteration++;
 
 
 
 
-    } while (epsilonInv < 1 );
+
+    }
 
     P_+= C_*s;
 
