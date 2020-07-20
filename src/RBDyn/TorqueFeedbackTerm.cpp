@@ -262,10 +262,11 @@ void IntegralTermAntiWindup::computeTerm(const rbd::MultiBody & mb,
       std::cout << "Mehdi aw" << iteration++ << " " << index << " " << 1/epsilonInv << std::endl;
 
 
-      P_+= C_*s;
+
 
     } while (epsilonInv < 1);
 
+    P_+= C_*s;
 
     computeGammaD();
   }
