@@ -215,16 +215,8 @@ void IntegralTermAntiWindup::computeTerm(const rbd::MultiBody & mb,
 
     Eigen::VectorXd s = alphaVec_ref - alphaVec_hat;
 
-
-    Eigen::VectorXd torqueU_prime = torqueU_.array().abs() * perc_;
-    Eigen::VectorXd torqueL_prime = torqueL_.array().abs() * perc_;
-
-    Eigen::VectorXd torque_prime = Eigen::VectorXd::Zero(torqueU_prime.size());
-    for (int i =0 ; i<torque_prime.size(); ++i )
-    {
-      torque_prime(i)=std::min(torqueU_prime(i), torqueL_prime(i));
-    }
-
+    Eigen::VectorXd torqueU_prime = torqueU_ * perc_;
+    Eigen::VectorXd torqueL_prime = torqueL_ * perc_;
 
     for (int i = 0; i < mb.nrJoints(); i++)
     {
@@ -233,41 +225,53 @@ void IntegralTermAntiWindup::computeTerm(const rbd::MultiBody & mb,
         int j = mb.jointPosInDof(i);
         Eigen::Vector6d acc;
 	      acc << maxAngAcc_, maxLinAcc_;
-        torque_prime.segment<6>(j) = fd_->H().block<6, 6>(j, j).diagonal().array() * acc.array();
+        torqueU_prime.segment<6>(j) = fd_->H().block<6, 6>(j, j).diagonal().array() * acc.array();
+        torqueL_prime.segment<6>(j) = -torqueU_prime.segment<6>(j);
         break;
       }
     }
 
-    double epsilonInv = 0; ///Inverse of epsilon
-    Eigen::MatrixXd reducedK(K_);
-    int iteration =0;
-    bool continueLoop =true;
-    while (continueLoop)
+    P_  = K_*s;
+
+    /// get the multiplier of the bound violation
+    double epsilonU = (P_.array() / torqueU_prime.array()).maxCoeff();
+    double epsilonL = (P_.array() / torqueL_prime.array()).maxCoeff();
+    double epsilon  = std::max(std::max(epsilonU, epsilonL),1.);
+
+    double dotprod = P_.dot(s)/epsilon;
+    for (int i = 0; i < P_.size(); i++)
     {
-
-
-      std::cout << "Mehdi K" << reducedK << std::endl;
-
-      continueLoop=false;
-
-      Eigen::VectorXd::Index index;
-      for (index=0 ; index<P_.size() ; ++index)
+      if (P_(i)>torqueU_prime(i))
       {
-        P_(index) = reducedK.row(index) * s;
-
-        epsilonInv =  torque_prime(index) / fabs(P_(index)) ;
-
-        if (epsilonInv<1)
-        {
-          ///add a small overestimation of epsilon
-          epsilonInv *= 1 - 1e-4;
-          /// multiply the row and the col corresponding to the excess value
-          reducedK.col(index) = (reducedK.row(index) *= epsilonInv).transpose();
-          continueLoop=true;
-          std::cout << "Mehdi aw" << iteration << " " << index << " " << 1/epsilonInv << std::endl;
-        }
+        P_(i) = torqueU_prime(i);
       }
-      iteration++;
+      else if (P_(i)<torqueL_prime(i))
+      {
+        P_(i) = torqueL_prime(i);
+      }
+    }
+
+    if (P_.dot(s)<dotprod)
+    {
+      assert(false && "THE ELEMENTWISE WAS A REGRESSION IN DOT PROD");
+      std::cout << "THE ELEMENTWISE WAS A REGRESSION IN DOT PROD";
+      std::cerr << "THE ELEMENTWISE WAS A REGRESSION IN DOT PROD";
+      exit(1);
+    }
+    else
+    {
+      if ((P_.array() / torqueU_prime.array()).maxCoeff() > 1 )
+      {
+        std::cout << "assert ( (P_.array() / torqueU_prime.array()).maxCoeff() < 1 );" << std::endl;
+        std::cerr << "assert ( (P_.array() / torqueU_prime.array()).maxCoeff() < 1 );" << std::endl;
+        exit(1);
+      }
+      else if ( (P_.array() / torqueL_prime.array()).maxCoeff() > 1)
+      {
+        std::cout << "assert ( (P_.array() / torqueL_prime.array()).maxCoeff() < 1);"  << std::endl;
+        std::cerr << "assert ( (P_.array() / torqueL_prime.array()).maxCoeff() < 1);"  << std::endl;
+        exit(1);
+      }
     }
 
     P_+= C_*s;
