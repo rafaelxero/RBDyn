@@ -196,8 +196,10 @@ IntegralTermAntiWindup::IntegralTermAntiWindup(const std::vector<rbd::MultiBody>
   : IntegralTerm(mbs, robotIndex, fd, intglTermType, velGainType,
                 lambda, phiSlow, phiFast, fastFilterWeight, timeStep),
     perc_(perc), maxLinAcc_(maxLinAcc), maxAngAcc_(maxAngAcc),
-    torqueL_(torqueL), torqueU_(torqueU)
-{}
+    torqueL_(torqueL), torqueU_(torqueU), 
+    solver_(mbs[robotIndex].nrJoints())
+{
+} 
 
 void IntegralTermAntiWindup::computeTerm(const rbd::MultiBody & mb,
 					 const rbd::MultiBodyConfig & mbc_real,
@@ -237,40 +239,55 @@ void IntegralTermAntiWindup::computeTerm(const rbd::MultiBody & mb,
     double epsilonL = (P_.array() / torqueL_prime.array()).maxCoeff();
     double epsilon  = std::max(std::max(epsilonU, epsilonL),1.);
 
-    double dotprod = P_.dot(s)/epsilon;
-    for (int i = 0; i < P_.size(); i++)
-    {
-      if (P_(i)>torqueU_prime(i))
-      {
-        P_(i) = torqueU_prime(i);
-      }
-      else if (P_(i)<torqueL_prime(i))
-      {
-        P_(i) = torqueL_prime(i);
-      }
-    }
+    Eigen::MatrixXd serror( 3, mb.nrJoints() );
+    serror.row(0) = s.transpose();
+    serror.row(1) = alphaVec_hat.transpose();
+    serror.row(2) = alphaVec_ref.transpose();
 
-    if (P_.dot(s)<dotprod)
+    std::cout << "Mehdi  serror   "<<std::endl;
+    std::cout << serror<< std::endl;
+    
+    if (epsilon >1)
     {
-      assert(false && "THE ELEMENTWISE WAS A REGRESSION IN DOT PROD");
-      std::cout << "THE ELEMENTWISE WAS A REGRESSION IN DOT PROD";
-      std::cerr << "THE ELEMENTWISE WAS A REGRESSION IN DOT PROD";
-      exit(1);
-    }
-    else
-    {
-      if ((P_.array() / torqueU_prime.array()).maxCoeff() > 1 )
+      double dotprod = P_.dot(s)/epsilon;
+      std::cout << "Mehdi QP Started"<<std::endl;
+      
+      if (solver_.solve(P_,s,dotprod,torqueL_prime,torqueU_prime)==jrlqp::TerminationStatus::SUCCESS)
       {
-        std::cout << "assert ( (P_.array() / torqueU_prime.array()).maxCoeff() < 1 );" << std::endl;
-        std::cerr << "assert ( (P_.array() / torqueU_prime.array()).maxCoeff() < 1 );" << std::endl;
-        exit(1);
-      }
-      else if ( (P_.array() / torqueL_prime.array()).maxCoeff() > 1)
+        std::cout << "Mehdi Succeeded"<<(solver_.solution()-P_).norm() <<" "<< (P_/epsilon-P_).norm()<<std::endl;
+        P_ = solver_.solution();
+      } 
+      else
       {
-        std::cout << "assert ( (P_.array() / torqueL_prime.array()).maxCoeff() < 1);"  << std::endl;
-        std::cerr << "assert ( (P_.array() / torqueL_prime.array()).maxCoeff() < 1);"  << std::endl;
-        exit(1);
+        std::cout << "Mehdi QP FAILED"<<std::endl;
+        std::cerr << "Mehdi QP FAILED"<<std::endl;
+        exit(0);
+        P_ /=epsilon;
       }
+
+  
+      /// -----------------------------------------testing -------------------------------------
+      {
+        double epsilonU = (P_.array() / torqueU_prime.array()).maxCoeff();
+        double epsilonL = (P_.array() / torqueL_prime.array()).maxCoeff();
+        double epsilon  = std::max(std::max(epsilonU, epsilonL),1.);
+
+        if (epsilon>1)
+        {
+          std::cout << "Mehdi Bounds not respected !"<<std::endl;
+          std::cerr << "Mehdi Bounds not respected !"<<std::endl;
+          exit(0);
+        }        
+        else
+        {
+          if (P_.dot(s)<dotprod)
+          {
+            std::cout << "Mehdi dotProd not respected !"<<std::endl;
+            std::cerr << "Mehdi dotProd not respected !"<<std::endl;
+            exit(0);
+          }          
+        }
+      } 
     }
 
     P_+= C_*s;

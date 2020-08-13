@@ -27,6 +27,8 @@
 #include <RBDyn/Joint.h>
 #include <RBDyn/Coriolis.h>
 
+
+#include <jrl-qp/experimental/BoxAndSingleConstraintSolver.h>
 namespace torque_control
 {
 
@@ -172,6 +174,7 @@ class IntegralTermAntiWindup : public IntegralTerm
   Eigen::Vector3d maxLinAcc_, maxAngAcc_;
   Eigen::VectorXd torqueL_, torqueU_;
   double perc_;
+  jrlqp::experimental::BoxAndSingleConstraintSolver solver_;
 };
 
 
