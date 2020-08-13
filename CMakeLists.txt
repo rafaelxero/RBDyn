@@ -24,6 +24,7 @@ project(RBDyn CXX)
 option(BENCHMARKS "Generate benchmarks." OFF)
 
 add_project_dependency(SpaceVecAlg REQUIRED NO_MODULE)
+ADD_REQUIRED_DEPENDENCY("jrl-qp")
 
 # For MSVC, set local environment variable to enable finding the built dll
 # of the main library when launching ctest with RUN_TESTS
