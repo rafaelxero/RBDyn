@@ -174,7 +174,7 @@ class IntegralTermAntiWindup : public IntegralTerm
   Eigen::Vector3d maxLinAcc_, maxAngAcc_;
   Eigen::VectorXd torqueL_, torqueU_;
   double perc_;
-  jrlqp::experimental::BoxAndSingleConstraintSolver solver_;
+  jrl::qp::experimental::BoxAndSingleConstraintSolver solver_;
 };
 
 
