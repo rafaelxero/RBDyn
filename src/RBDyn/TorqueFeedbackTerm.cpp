@@ -262,7 +262,7 @@ void IntegralTermAntiWindup::computeTerm(const rbd::MultiBody & mb,
       {
         std::cout << "Mehdi QP FAILED"<<std::endl;
         std::cerr << "Mehdi QP FAILED"<<std::endl;
-        exit(0);
+        
         P_ /=epsilon;
       }
 
