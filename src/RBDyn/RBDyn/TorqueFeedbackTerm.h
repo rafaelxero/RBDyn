@@ -81,6 +81,92 @@ class TorqueFeedbackTerm
 };
 
 
+
+class IntegralTerm2 : public TorqueFeedbackTerm
+{
+ public:
+
+  enum IntegralTermType
+  {
+    None,
+    Simple,
+    PassivityBased
+  };
+
+  enum VelocityGainType
+  {
+    Diagonal,
+    MassDiagonal,
+    MassMatrix
+  };
+ ///TorqueL is teh lower bound dor the torque
+ ///TorqueU is the upper bound for the torque
+
+  IntegralTerm2(const std::vector<rbd::MultiBody> & mbs, int robotIndex,
+			 const std::shared_ptr<rbd::ForwardDynamics> fd,
+			 IntegralTermType intglTermType, VelocityGainType velGainType,
+			 double lambda, double perc,
+			 const Eigen::Vector3d & maxLinAcc,
+			 const Eigen::Vector3d & maxAngAcc,
+			 const Eigen::VectorXd & torqueL,
+			 const Eigen::VectorXd & torqueU,
+       double phiSlow, double phiFast,
+       double fastFilterWeight, double timeStep);
+
+  void computeGain(const rbd::MultiBody & mb,
+		   const rbd::MultiBodyConfig & mbc_real);
+
+  void computeTerm(const rbd::MultiBody & mb,
+                   const rbd::MultiBodyConfig & mbc_real,
+                   const rbd::MultiBodyConfig & mbc_calc) override;
+
+  void computeTerm(const rbd::MultiBody & mb,
+                   const rbd::MultiBodyConfig & mbc_real,
+                   const rbd::MultiBodyConfig & mbc_calc,
+                   const Eigen::VectorXd & diff_torques);
+
+  const Eigen::MatrixXd & CoriolisFactorization() const
+  {
+    return C_;
+  }
+
+ protected:
+
+  IntegralTermType intglTermType_;
+  VelocityGainType velGainType_;
+  double lambda_;
+
+  rbd::Coriolis coriolis_;
+  Eigen::MatrixXd C_;
+  Eigen::MatrixXd K_;
+
+  Eigen::VectorXd previousS_;
+
+  Eigen::VectorXd fastFilteredS_;
+  Eigen::VectorXd slowFilteredS_;
+
+  double phiSlow_;
+  double phiFast_;
+  double expPhiSlow_;
+  double expPhiFast_;
+  double fastFilterWeight_;
+
+  Eigen::Vector3d maxLinAcc_, maxAngAcc_;
+  
+  Eigen::VectorXd torqueL_, torqueU_;
+  double currentPerc_;
+  double targetPerc_;
+
+  int floatingBaseIndex_;
+  jrl::qp::experimental::BoxAndSingleConstraintSolver solver_;
+
+
+  double timeStep_;
+
+
+};
+
+
 class IntegralTerm : public TorqueFeedbackTerm
 {
  public:
