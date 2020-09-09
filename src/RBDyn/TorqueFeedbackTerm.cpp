@@ -312,7 +312,7 @@ void IntegralTermAntiWindup::computeTerm(const rbd::MultiBody & mb,
 
     if (intglTermType_ == PassivityBased)
     {
-      P_ += C_ * filteredS;
+      P_ += C_ * s;
     }
 
     computeGammaD();
