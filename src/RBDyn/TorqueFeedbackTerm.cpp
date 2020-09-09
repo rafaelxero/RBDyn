@@ -284,30 +284,6 @@ void IntegralTermAntiWindup::computeTerm(const rbd::MultiBody & mb,
         
         P_ /=epsilon;
       }
-
-  
-      /// -----------------------------------------testing -------------------------------------
-      {
-        double epsilonU = (P_.array() / torqueU_prime.array()).maxCoeff();
-        double epsilonL = (P_.array() / torqueL_prime.array()).maxCoeff();
-        double epsilon  = std::max(std::max(epsilonU, epsilonL),1.);
-
-        if (epsilon>1)
-        {
-          std::cout << "Mehdi Bounds not respected !"<<std::endl;
-          std::cerr << "Mehdi Bounds not respected !"<<std::endl;
-          exit(0);
-        }        
-        else
-        {
-          if (P_.dot(s)<dotprod)
-          {
-            std::cout << "Mehdi dotProd not respected !"<<std::endl;
-            std::cerr << "Mehdi dotProd not respected !"<<std::endl;
-            exit(0);
-          }          
-        }
-      } 
     }
 
     if (intglTermType_ == PassivityBased)
