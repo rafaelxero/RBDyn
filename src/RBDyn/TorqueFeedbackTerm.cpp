@@ -138,8 +138,14 @@ void IntegralTerm::computeTerm(const rbd::MultiBody & mb,
 
     // std::cout << "Rafa, in computeTerm, filteredS = " << filteredS.transpose() << std::endl;
 
-    P_ = (K_+C_) * filteredS;  // Rafa, this disabled code is just temporary... we have to use this
-    // P_ = L_ * s;
+    if (intglTermType_ == Simple )
+    {
+      P_ = K_* filteredS; 
+    }
+    else
+    {
+      P_ = (K_ + C_) * filteredS; 
+    }
 
     // std::cout << "Rafa, in IntegralTerm::computeTerm, alphaVec_ref = " << alphaVec_ref.transpose() << std::endl;
     // std::cout << "Rafa, in IntegralTerm::computeTerm, alphaVec_hat = " << alphaVec_hat.transpose() << std::endl;
@@ -158,14 +164,27 @@ void IntegralTerm::computeTerm(const rbd::MultiBody & mb,
 {
   computeTerm(mb, mbc_real, mbc_calc);
 
-  std::cout << "Rafa, in IntegralTerm::computeTerm for smooth transition, diff_torques = " << diff_torques.transpose() << std::endl;
+  std::cout << "Rafa, in IntegralTerm::computeTerm for smooth transition, diff_torques = " << diff_torques.transpose()
+            << std::endl;
 
-  Eigen::MatrixXd L = K_ + C_;
+  
 
-  if (intglTermType_ == Simple || intglTermType_ == PassivityBased)
+  if(intglTermType_ == Simple || intglTermType_ == PassivityBased)
   {
+    Eigen::MatrixXd L ;
+    
+    if(intglTermType_ == Simple)
+    {
+      L = K_;
+    }
+    else
+    {
+      L = K_ + C_;
+    }
+      
 
-    if (fastFilterWeight_ < 1) {
+    if(fastFilterWeight_ < 1)
+    {
       slowFilteredS_ = L.inverse() * diff_torques / (1 - fastFilterWeight_);
       fastFilteredS_.setZero();
     }
@@ -291,7 +310,10 @@ void IntegralTermAntiWindup::computeTerm(const rbd::MultiBody & mb,
       } 
     }
 
-    P_+= C_*s;
+    if (intglTermType_ == PassivityBased)
+    {
+      P_ += C_ * filteredS;
+    }
 
     computeGammaD();
   }
