@@ -389,10 +389,10 @@ void IntegralTerm2::computeTerm(const rbd::MultiBody & mb,
 
     if(epsilon > 1)
     {
-      double dotprod = P_.dot(s) / epsilon;
+      double dotprod = P_.dot(filteredS) / epsilon;
       std::cout << "Mehdi QP Started" << std::endl;
 
-      if(solver_.solve(P_, s, dotprod, torqueL_prime, torqueU_prime) == jrl::qp::TerminationStatus::SUCCESS)
+      if(solver_.solve(P_, filteredS, dotprod, torqueL_prime, torqueU_prime) == jrl::qp::TerminationStatus::SUCCESS)
       {
         std::cout << "Mehdi Succeeded" << (solver_.solution() - P_).norm() << " " << (P_ / epsilon - P_).norm()
                   << std::endl;
