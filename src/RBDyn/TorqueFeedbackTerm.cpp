@@ -259,13 +259,13 @@ void IntegralTermAntiWindup::computeTerm(const rbd::MultiBody & mb,
     double epsilonL = (P_.array() / torqueL_prime.array()).maxCoeff();
     double epsilon  = std::max(std::max(epsilonU, epsilonL),1.);
 
-    Eigen::MatrixXd serror( 3, mb.nrJoints() );
-    serror.row(0) = s.transpose();
-    serror.row(1) = alphaVec_hat.transpose();
-    serror.row(2) = alphaVec_ref.transpose();
+    // Eigen::MatrixXd serror( 3, mb.nrJoints() );
+    // serror.row(0) = s.transpose();
+    // serror.row(1) = alphaVec_hat.transpose();
+    // serror.row(2) = alphaVec_ref.transpose();
 
-    std::cout << "Mehdi  serror   "<<std::endl;
-    std::cout << serror<< std::endl;
+    // std::cout << "Mehdi  serror   "<<std::endl;
+    // std::cout << serror<< std::endl;
     
     if (epsilon >1)
     {
