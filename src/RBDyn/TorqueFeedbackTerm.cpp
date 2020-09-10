@@ -343,11 +343,6 @@ void IntegralTerm2::computeTerm(const rbd::MultiBody & mb,
     Eigen::VectorXd alphaVec_ref = rbd::dofToVector(mb, mbc_calc.alpha);
     Eigen::VectorXd alphaVec_hat = rbd::dofToVector(mb, mbc_real.alpha);
 
-
-
-    Eigen::VectorXd alphaVec_ref = rbd::dofToVector(mb, mbc_calc.alpha);
-    Eigen::VectorXd alphaVec_hat = rbd::dofToVector(mb, mbc_real.alpha);
-
     Eigen::VectorXd newS = alphaVec_ref - alphaVec_hat;
 
     slowFilteredS_ = exp(-timeStep_ * phiSlow_) * slowFilteredS_ + newS - previousS_;
