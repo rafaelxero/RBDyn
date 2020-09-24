@@ -61,258 +61,21 @@ ElapsedTimeMap & TorqueFeedbackTerm::getElapsedTimes()
  *    IntegralTerm
  */
 
-IntegralTerm::IntegralTerm(const std::vector<rbd::MultiBody> & mbs, int robotIndex,
+IntegralTerm::IntegralTerm(const std::vector<rbd::MultiBody> & mbs,
+                           int robotIndex,
                            const std::shared_ptr<rbd::ForwardDynamics> fd,
-                           IntegralTermType intglTermType, VelocityGainType velGainType,
-                           double lambda, double phiSlow, double phiFast, double fastFilterWeight,
+                           IntegralTermType intglTermType,
+                           VelocityGainType velGainType,
+                           double lambda,
+                           double perc,
+                           const Eigen::Vector3d & maxLinAcc,
+                           const Eigen::Vector3d & maxAngAcc,
+                           const Eigen::VectorXd & torqueL,
+                           const Eigen::VectorXd & torqueU,
+                           double phiSlow,
+                           double phiFast,
+                           double fastFilterWeight,
                            double timeStep)
-  : TorqueFeedbackTerm(mbs, robotIndex, fd),
-    intglTermType_(intglTermType),
-    velGainType_(velGainType),
-    lambda_(lambda),
-    coriolis_(mbs[robotIndex]),
-    C_(Eigen::MatrixXd::Zero(nrDof_, nrDof_)),
-    K_(Eigen::MatrixXd::Zero(nrDof_, nrDof_)),
-    previousS_(Eigen::VectorXd::Zero(nrDof_)),
-    fastFilteredS_(Eigen::VectorXd::Zero(nrDof_)),
-    slowFilteredS_(Eigen::VectorXd::Zero(nrDof_)),
-    phiSlow_(phiSlow),
-    phiFast_(phiFast),
-    fastFilterWeight_(fastFilterWeight),
-    timeStep_(timeStep)
-{
-}
-
-void IntegralTerm::computeGain(const rbd::MultiBody & mb,
-			       const rbd::MultiBodyConfig & mbc_real)
-{
-  // std::cout << "Rafa, in IntegralTerm::computeTerm, fd_->H().rows() = " << fd_->H().rows() << std::endl;
-
-  if (velGainType_ == MassMatrix)
-  {
-    K_ = lambda_ * fd_->H();
-  }
-  else if (velGainType_ == MassDiagonal)
-  {
-    K_ = lambda_ * fd_->H().diagonal().asDiagonal();
-  }
-  else
-  {
-    K_ = lambda_ * Eigen::MatrixXd::Identity(nrDof_, nrDof_);
-  }
-
-  clock_t time;
-
-  if (intglTermType_ == PassivityBased)
-  {
-    time = clock();
-    C_ = coriolis_.coriolis(mb, mbc_real);
-    elapsed_.at("computeFbTerm-Gain-Coriolis") = (int) (clock() - time);
-  }
-}
-
-void IntegralTerm::computeTerm(const rbd::MultiBody & mb,
-                               const rbd::MultiBodyConfig & mbc_real,
-                               const rbd::MultiBodyConfig & mbc_calc)
-{
-  clock_t time;
-
-  if (intglTermType_ == Simple || intglTermType_ == PassivityBased)
-  {
-    time = clock();
-    computeGain(mb, mbc_real);
-    elapsed_.at("computeFbTerm-Gain") = (int) (clock() - time);
-
-    Eigen::VectorXd alphaVec_ref = rbd::dofToVector(mb, mbc_calc.alpha);
-    Eigen::VectorXd alphaVec_hat = rbd::dofToVector(mb, mbc_real.alpha);
-
-    Eigen::VectorXd s = alphaVec_ref - alphaVec_hat;
-
-    slowFilteredS_ = exp(-timeStep_*phiSlow_) * slowFilteredS_ + s- previousS_;
-    fastFilteredS_ = exp(-timeStep_*phiFast_) * fastFilteredS_ + s- previousS_;
-
-    previousS_ = s;
-
-    Eigen::VectorXd filteredS = fastFilterWeight_*fastFilteredS_+(1-fastFilterWeight_)*slowFilteredS_;
-
-    // std::cout << "Rafa, in computeTerm, filteredS = " << filteredS.transpose() << std::endl;
-
-    if (intglTermType_ == Simple )
-    {
-      P_ = K_* filteredS; 
-    }
-    else
-    {
-      P_ = (K_ + C_) * filteredS; 
-    }
-
-    // std::cout << "Rafa, in IntegralTerm::computeTerm, P_ = " << P_.transpose() << std::endl;
-    
-    time = clock();
-    computeGammaD();
-    elapsed_.at("computeFbTerm-GammaD") = (int) (clock() - time);
-  }
-}
-
-void IntegralTerm::computeTerm(const rbd::MultiBody & mb,
-                               const rbd::MultiBodyConfig & mbc_real,
-                               const rbd::MultiBodyConfig & mbc_calc,
-                               const Eigen::VectorXd & diff_torques)
-{
-  computeTerm(mb, mbc_real, mbc_calc);
-
-  std::cout << "Rafa, in IntegralTerm::computeTerm for smooth transition, diff_torques = " << diff_torques.transpose()
-            << std::endl;
-
-  
-
-  if(intglTermType_ == Simple || intglTermType_ == PassivityBased)
-  {
-    Eigen::MatrixXd L ;
-    
-    if(intglTermType_ == Simple)
-    {
-      L = K_;
-    }
-    else
-    {
-      L = K_ + C_;
-    }
-      
-
-    if(fastFilterWeight_ < 1)
-    {
-      slowFilteredS_ = L.inverse() * diff_torques / (1 - fastFilterWeight_);
-      fastFilteredS_.setZero();
-    }
-    else {
-      slowFilteredS_.setZero();
-      fastFilteredS_ = L.inverse() * diff_torques / fastFilterWeight_;
-    }
-
-    Eigen::VectorXd filteredS = fastFilterWeight_*fastFilteredS_+(1-fastFilterWeight_)*slowFilteredS_;
-    P_ = L * filteredS;
-
-    std::cout << "Rafa, in IntegralTerm::computeTerm for smooth transition, P_ = " << P_.transpose() << std::endl;
-  }
-}
-
-/**
- *    IntegralTermAntiWindup
- */
-
-IntegralTermAntiWindup::IntegralTermAntiWindup(const std::vector<rbd::MultiBody> & mbs, int robotIndex,
-					       const std::shared_ptr<rbd::ForwardDynamics> fd,
-					       IntegralTermType intglTermType,
-					       VelocityGainType velGainType,
-					       double lambda, double perc,
-					       const Eigen::Vector3d & maxLinAcc,
-					       const Eigen::Vector3d & maxAngAcc,
-					       const Eigen::VectorXd & torqueL,
-					       const Eigen::VectorXd & torqueU,
-                                               double phiSlow, double phiFast, double fastFilterWeight,
-                                               double timeStep)
-  : IntegralTerm(mbs, robotIndex, fd, intglTermType, velGainType,
-                lambda, phiSlow, phiFast, fastFilterWeight, timeStep),
-    perc_(perc), maxLinAcc_(maxLinAcc), maxAngAcc_(maxAngAcc),
-    torqueL_(torqueL), torqueU_(torqueU), 
-    solver_(mbs[robotIndex].nrJoints())
-{
-} 
-
-void IntegralTermAntiWindup::computeTerm(const rbd::MultiBody & mb,
-					 const rbd::MultiBodyConfig & mbc_real,
-					 const rbd::MultiBodyConfig & mbc_calc)
-{
-  if (intglTermType_ == Simple || intglTermType_ == PassivityBased)
-  {
-    computeGain(mb, mbc_real);
-
-    Eigen::VectorXd alphaVec_ref = rbd::dofToVector(mb, mbc_calc.alpha);
-    Eigen::VectorXd alphaVec_hat = rbd::dofToVector(mb, mbc_real.alpha);
-
-    Eigen::VectorXd s = alphaVec_ref - alphaVec_hat;
-
-    Eigen::VectorXd torqueU_prime = torqueU_ * perc_;
-    Eigen::VectorXd torqueL_prime = torqueL_ * perc_;
-
-
-
-    for (int i = 0; i < mb.nrJoints(); i++)
-    {
-      if (mb.joint(i).type() == rbd::Joint::Free)
-      {
-        int j = mb.jointPosInDof(i);
-        Eigen::Vector6d acc;
-	      acc << maxAngAcc_, maxLinAcc_;
-        torqueU_prime.segment<6>(j) = fd_->H().block<6, 6>(j, j).diagonal().array() * acc.array();
-        torqueL_prime.segment<6>(j) = -torqueU_prime.segment<6>(j);
-        break;
-      }
-    }
-
-    P_  = K_*s;
-
-    /// get the multiplier of the bound violation
-    double epsilonU = (P_.array() / torqueU_prime.array()).maxCoeff();
-    double epsilonL = (P_.array() / torqueL_prime.array()).maxCoeff();
-    double epsilon  = std::max(std::max(epsilonU, epsilonL),1.);
-
-    // Eigen::MatrixXd serror( 3, mb.nrJoints() );
-    // serror.row(0) = s.transpose();
-    // serror.row(1) = alphaVec_hat.transpose();
-    // serror.row(2) = alphaVec_ref.transpose();
-
-    // std::cout << "Mehdi  serror   "<<std::endl;
-    // std::cout << serror<< std::endl;
-    
-    if (epsilon >1)
-    {
-      double dotprod = P_.dot(s)/epsilon;
-      std::cout << "Mehdi QP Started"<<std::endl;
-      
-      if (solver_.solve(P_,s,dotprod,torqueL_prime,torqueU_prime)==jrl::qp::TerminationStatus::SUCCESS)
-      {
-        std::cout << "Mehdi Succeeded"<<(solver_.solution()-P_).norm() <<" "<< (P_/epsilon-P_).norm()<<std::endl;
-        P_ = solver_.solution();
-      } 
-      else
-      {
-        std::cout << "Mehdi QP FAILED"<<std::endl;
-        std::cerr << "Mehdi QP FAILED"<<std::endl;
-        
-        P_ /=epsilon;
-      }
-    }
-
-    if (intglTermType_ == PassivityBased)
-    {
-      P_ += C_ * s;
-    }
-
-    computeGammaD();
-  }
-}
-
-/**
- *    IntegralTerm
- */
-
-IntegralTerm2::IntegralTerm2(const std::vector<rbd::MultiBody> & mbs,
-                             int robotIndex,
-                             const std::shared_ptr<rbd::ForwardDynamics> fd,
-                             IntegralTermType intglTermType,
-                             VelocityGainType velGainType,
-                             double lambda,
-                             double perc,
-                             const Eigen::Vector3d & maxLinAcc,
-                             const Eigen::Vector3d & maxAngAcc,
-                             const Eigen::VectorXd & torqueL,
-                             const Eigen::VectorXd & torqueU,
-                             double phiSlow,
-                             double phiFast,
-                             double fastFilterWeight,
-                             double timeStep)
 : TorqueFeedbackTerm(mbs, robotIndex, fd), intglTermType_(intglTermType), velGainType_(velGainType), lambda_(lambda),
   coriolis_(mbs[robotIndex]), C_(Eigen::MatrixXd::Zero(nrDof_, nrDof_)), K_(Eigen::MatrixXd::Zero(nrDof_, nrDof_)),
   previousS_(Eigen::VectorXd::Zero(nrDof_)), fastFilteredS_(Eigen::VectorXd::Zero(nrDof_)),
@@ -331,9 +94,9 @@ IntegralTerm2::IntegralTerm2(const std::vector<rbd::MultiBody> & mbs,
   }
 }
 
-void IntegralTerm2::computeTerm(const rbd::MultiBody & mb,
-                                const rbd::MultiBodyConfig & mbc_real,
-                                const rbd::MultiBodyConfig & mbc_calc)
+void IntegralTerm::computeTerm(const rbd::MultiBody & mb,
+                               const rbd::MultiBodyConfig & mbc_real,
+                               const rbd::MultiBodyConfig & mbc_calc)
 {
   if(intglTermType_ == Simple || intglTermType_ == PassivityBased)
   {
@@ -434,10 +197,10 @@ void IntegralTerm2::computeTerm(const rbd::MultiBody & mb,
   }
 }
 
-void IntegralTerm2::computeTerm(const rbd::MultiBody & mb,
-                                const rbd::MultiBodyConfig & mbc_real,
-                                const rbd::MultiBodyConfig & mbc_calc,
-                                const Eigen::VectorXd & diff_torques)
+void IntegralTerm::computeTerm(const rbd::MultiBody & mb,
+                               const rbd::MultiBodyConfig & mbc_real,
+                               const rbd::MultiBodyConfig & mbc_calc,
+                               const Eigen::VectorXd & diff_torques)
 {
   computeTerm(mb, mbc_real, mbc_calc);
 
@@ -480,7 +243,7 @@ void IntegralTerm2::computeTerm(const rbd::MultiBody & mb,
   }
 }
 
-void IntegralTerm2::computeGain(const rbd::MultiBody & mb, const rbd::MultiBodyConfig & mbc_real)
+void IntegralTerm::computeGain(const rbd::MultiBody & mb, const rbd::MultiBodyConfig & mbc_real)
 {
   // std::cout << "Rafa, in IntegralTerm::computeTerm, fd_->H().rows() = " << fd_->H().rows() << std::endl;
 
