@@ -140,6 +140,7 @@ class IntegralTerm : public TorqueFeedbackTerm
 
   rbd::Coriolis coriolis_;
   Eigen::MatrixXd C_;
+  Eigen::VectorXd coriolisTerm_;
   Eigen::MatrixXd K_;
 
   Eigen::VectorXd previousS_;

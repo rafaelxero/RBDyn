@@ -77,11 +77,12 @@ IntegralTerm::IntegralTerm(const std::vector<rbd::MultiBody> & mbs,
                            double fastFilterWeight,
                            double timeStep)
 : TorqueFeedbackTerm(mbs, robotIndex, fd), intglTermType_(intglTermType), velGainType_(velGainType), lambda_(lambda),
-  coriolis_(mbs[robotIndex]), C_(Eigen::MatrixXd::Zero(nrDof_, nrDof_)), K_(Eigen::MatrixXd::Zero(nrDof_, nrDof_)),
-  previousS_(Eigen::VectorXd::Zero(nrDof_)), fastFilteredS_(Eigen::VectorXd::Zero(nrDof_)),
-  slowFilteredS_(Eigen::VectorXd::Zero(nrDof_)), phiSlow_(phiSlow), phiFast_(phiFast),
-  expPhiSlow_(exp(-timeStep_ * phiSlow_)), expPhiFast_(exp(-timeStep_ * phiFast_)), fastFilterWeight_(fastFilterWeight),
-  maxLinAcc_(maxLinAcc), maxAngAcc_(maxAngAcc), timeStep_(timeStep), targetPerc_(perc), currentPerc_(perc),
+  coriolis_(mbs[robotIndex]), C_(Eigen::MatrixXd::Zero(nrDof_, nrDof_)), coriolisTerm_(Eigen::VectorXd::Zero(nrDof_)),
+  K_(Eigen::MatrixXd::Zero(nrDof_, nrDof_)), previousS_(Eigen::VectorXd::Zero(nrDof_)),
+  fastFilteredS_(Eigen::VectorXd::Zero(nrDof_)), slowFilteredS_(Eigen::VectorXd::Zero(nrDof_)), phiSlow_(phiSlow),
+  phiFast_(phiFast), expPhiSlow_(exp(-timeStep_ * phiSlow_)), expPhiFast_(exp(-timeStep_ * phiFast_)),
+  fastFilterWeight_(fastFilterWeight),  maxLinAcc_(maxLinAcc), maxAngAcc_(maxAngAcc),
+  timeStep_(timeStep), targetPerc_(perc), currentPerc_(perc),
   torqueL_(torqueL), torqueU_(torqueU), floatingBaseIndex_(-1), solver_(mbs[robotIndex].nrJoints())
 {
   for(int i = 0; i < mbs[robotIndex].nrJoints(); i++)
@@ -128,6 +129,16 @@ void IntegralTerm::computeTerm(const rbd::MultiBody & mb,
       torqueU_prime.segment<6>(floatingBaseIndex_) =
           fd_->H().block<6, 6>(floatingBaseIndex_, floatingBaseIndex_).diagonal().array() * acc.array();
       torqueL_prime.segment<6>(floatingBaseIndex_) = -torqueU_prime.segment<6>(floatingBaseIndex_);
+    }
+
+    if(intglTermType_ == PassivityBased)
+    {
+      coriolisTerm_ = C_ * filteredS;
+
+      /// CANCELED /// substract the Coriolis term to make sure that the whole integral term
+      /// CANCELED /// is respecting tha antiwindup
+      // torqueU_prime -= coriolisTerm_;
+      // torqueL_prime -= coriolisTerm_;
     }
 
     P_ = K_ * filteredS;
@@ -188,9 +199,9 @@ void IntegralTerm::computeTerm(const rbd::MultiBody & mb,
       }
     }
 
-    if (intglTermType_ == PassivityBased)
+    if(intglTermType_ == PassivityBased)
     {
-      P_ += C_ * filteredS;
+      P_ += coriolisTerm_;
     }
 
     computeGammaD();
@@ -211,8 +222,9 @@ void IntegralTerm::computeTerm(const rbd::MultiBody & mb,
 
   if(intglTermType_ == Simple || intglTermType_ == PassivityBased)
   {
-    double percU = (diff_torques.array() / torqueU_.array()).maxCoeff();
-    double percL = (diff_torques.array() / torqueL_.array()).maxCoeff();
+    Eigen::VectorXd diff_torques_for_antiwindup = diff_torques - coriolisTerm_;
+    double percU = (diff_torques_for_antiwindup.array() / torqueU_.array()).maxCoeff();
+    double percL = (diff_torques_for_antiwindup.array() / torqueL_.array()).maxCoeff();
     currentPerc_ = std::max(std::max(percU, percL), currentPerc_);
 
     Eigen::MatrixXd L;   
