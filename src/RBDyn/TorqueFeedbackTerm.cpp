@@ -108,8 +108,8 @@ void IntegralTerm::computeTerm(const rbd::MultiBody & mb,
 
     Eigen::VectorXd newS = alphaVec_ref - alphaVec_hat;
 
-    slowFilteredS_ = exp(-timeStep_ * phiSlow_) * slowFilteredS_ + newS - previousS_;
-    fastFilteredS_ = exp(-timeStep_ * phiFast_) * fastFilteredS_ + newS - previousS_;
+    slowFilteredS_ = expPhiSlow_ * slowFilteredS_ + newS - previousS_;
+    fastFilteredS_ = expPhiFast_ * fastFilteredS_ + newS - previousS_;
 
     previousS_ = newS;
 
