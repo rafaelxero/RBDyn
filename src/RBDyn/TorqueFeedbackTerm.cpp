@@ -115,6 +115,8 @@ void IntegralTerm::computeTerm(const rbd::MultiBody & mb,
 
     Eigen::VectorXd filteredS = fastFilterWeight_ * fastFilteredS_ + (1 - fastFilterWeight_) * slowFilteredS_;
 
+    
+    ///compute the max torque allowed for the integral term
     Eigen::VectorXd torqueU_prime = torqueU_ * currentPerc_;
     Eigen::VectorXd torqueL_prime = torqueL_ * currentPerc_;
 
@@ -148,7 +150,7 @@ void IntegralTerm::computeTerm(const rbd::MultiBody & mb,
     double epsilonL = (P_.array() / torqueL_prime.array()).maxCoeff();
     double epsilon = std::max(std::max(epsilonU, epsilonL), 1.);
 
-    Eigen::MatrixXd serror(3, mb.nrJoints());
+    Eigen::MatrixXd serror(3, mb.nrDof());
     serror.row(0) = filteredS.transpose();
     serror.row(1) = alphaVec_hat.transpose();
     serror.row(2) = alphaVec_ref.transpose();
@@ -181,19 +183,17 @@ void IntegralTerm::computeTerm(const rbd::MultiBody & mb,
         double epsilonL = (P_.array() / torqueL_prime.array()).maxCoeff();
         double epsilon = std::max(std::max(epsilonU, epsilonL), 1.);
 
-        if(epsilon > 1)
+        if(epsilon > 1 + 1e-5)
         {
           std::cout << "Mehdi Bounds not respected !" << std::endl;
           std::cerr << "Mehdi Bounds not respected !" << std::endl;
-          exit(0);
         }
         else
         {
-          if(P_.dot(filteredS) < dotprod)
+          if(P_.dot(filteredS) < dotprod + 1e-5)
           {
-            std::cout << "Mehdi dotProd not respected !" << std::endl;
-            std::cerr << "Mehdi dotProd not respected !" << std::endl;
-            exit(0);
+            std::cout << "Mehdi dotProd not respected ! ref " << dotprod << " solution " << P_.dot(filteredS) << std::endl;
+            std::cerr << "Mehdi dotProd not respected ! ref " << dotprod << " solution " << P_.dot(filteredS) << std::endl;
           }
         }
       }
@@ -219,7 +219,6 @@ void IntegralTerm::computeTerm(const rbd::MultiBody & mb,
             << std::endl;
 
   
-
   if(intglTermType_ == Simple || intglTermType_ == PassivityBased)
   {
     Eigen::VectorXd diff_torques_for_antiwindup = diff_torques - coriolisTerm_;
@@ -248,8 +247,7 @@ void IntegralTerm::computeTerm(const rbd::MultiBody & mb,
       fastFilteredS_ = L.inverse() * diff_torques / fastFilterWeight_;
     }
 
-    Eigen::VectorXd filteredS = fastFilterWeight_ * fastFilteredS_ + (1 - fastFilterWeight_) * slowFilteredS_;
-    P_ = L * filteredS;
+     P_ = diff_torques;
 
     std::cout << "Rafa, in IntegralTerm::computeTerm for smooth transition, P_ = " << P_.transpose() << std::endl;
   }
