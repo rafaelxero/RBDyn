@@ -80,8 +80,8 @@ IntegralTerm::IntegralTerm(const std::vector<rbd::MultiBody> & mbs,
   coriolis_(mbs[robotIndex]), C_(Eigen::MatrixXd::Zero(nrDof_, nrDof_)), coriolisTerm_(Eigen::VectorXd::Zero(nrDof_)),
   K_(Eigen::MatrixXd::Zero(nrDof_, nrDof_)), previousS_(Eigen::VectorXd::Zero(nrDof_)),
   fastFilteredS_(Eigen::VectorXd::Zero(nrDof_)), slowFilteredS_(Eigen::VectorXd::Zero(nrDof_)), phiSlow_(phiSlow),
-  phiFast_(phiFast), expPhiSlow_(exp(-timeStep_ * phiSlow_)), expPhiFast_(exp(-timeStep_ * phiFast_)),
-  fastFilterWeight_(fastFilterWeight),  maxLinAcc_(maxLinAcc), maxAngAcc_(maxAngAcc),
+  phiFast_(phiFast), expPhiSlow_(exp(-timeStep * phiSlow)), expPhiFast_(exp(-timeStep * phiFast)),
+  fastFilterWeight_(fastFilterWeight), maxLinAcc_(maxLinAcc), maxAngAcc_(maxAngAcc),
   timeStep_(timeStep), targetPerc_(perc), currentPerc_(perc),
   torqueL_(torqueL), torqueU_(torqueU), floatingBaseIndex_(-1), solver_(mbs[robotIndex].nrJoints())
 {
