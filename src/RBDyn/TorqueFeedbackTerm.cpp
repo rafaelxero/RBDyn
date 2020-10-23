@@ -81,15 +81,23 @@ IntegralTerm::IntegralTerm(const std::vector<rbd::MultiBody> & mbs,
   K_(Eigen::MatrixXd::Zero(nrDof_, nrDof_)), previousS_(Eigen::VectorXd::Zero(nrDof_)),
   fastFilteredS_(Eigen::VectorXd::Zero(nrDof_)), slowFilteredS_(Eigen::VectorXd::Zero(nrDof_)), phiSlow_(phiSlow),
   phiFast_(phiFast), expPhiSlow_(exp(-timeStep * phiSlow)), expPhiFast_(exp(-timeStep * phiFast)),
-  fastFilterWeight_(fastFilterWeight), maxLinAcc_(maxLinAcc), maxAngAcc_(maxAngAcc),
-  timeStep_(timeStep), targetPerc_(perc), currentPerc_(perc),
-  torqueL_(torqueL), torqueU_(torqueU), floatingBaseIndex_(-1), solver_(mbs[robotIndex].nrJoints())
-{
+  fastFilterWeight_(fastFilterWeight), maxLinAcc_(maxLinAcc), maxAngAcc_(maxAngAcc), 
+  curMaxFBWrench_(Eigen::Vector6d::Zero()), targetMaxFBWrench_(Eigen::Vector6d::Zero()), 
+  initializedMaxFBWrenches(false),  timeStep_(timeStep), targetPerc_(perc), currentPerc_(perc),
+   torqueL_(torqueL), torqueU_(torqueU), floatingBaseIndex_(-1),  solver_(mbs[robotIndex].nrJoints())
+{  
   for(int i = 0; i < mbs[robotIndex].nrJoints(); i++)
   {
     if(mbs[robotIndex].joint(i).type() == rbd::Joint::Free)
     {
       floatingBaseIndex_ = mbs[robotIndex].jointPosInDof(i);
+
+      /// set the floating base limits to infinity by default
+      /// they will be replaced with wrench limit defined by the max acceleraTion
+      /// this is useful for the transition
+      torqueL_.segment<6>(floatingBaseIndex_).setConstant(- std::numeric_limits<double>::infinity());
+      torqueU_.segment<6>(floatingBaseIndex_).setConstant( std::numeric_limits<double>::infinity());
+
       break;
     }
   }
@@ -120,18 +128,26 @@ void IntegralTerm::computeTerm(const rbd::MultiBody & mb,
     Eigen::VectorXd torqueU_prime = torqueU_ * currentPerc_;
     Eigen::VectorXd torqueL_prime = torqueL_ * currentPerc_;
 
-    /// make current percentage converge to tarrget percentage
-    /// this exponential convergence allows to avoid discontinuous torques
-    currentPerc_ = expPhiSlow_ * currentPerc_ + (1 - expPhiSlow_) * targetPerc_;
-
     if(floatingBaseIndex_ != -1)
     {
-      Eigen::Vector6d acc;
-      acc << maxAngAcc_, maxLinAcc_;
-      torqueU_prime.segment<6>(floatingBaseIndex_) =
-          fd_->H().block<6, 6>(floatingBaseIndex_, floatingBaseIndex_).diagonal().array() * acc.array();
-      torqueL_prime.segment<6>(floatingBaseIndex_) = -torqueU_prime.segment<6>(floatingBaseIndex_);
+      if (!initializedMaxFBWrenches)
+      {
+        Eigen::Vector6d acc;
+        acc << maxAngAcc_, maxLinAcc_;
+
+        targetMaxFBWrench_ = curMaxFBWrench_ =
+            fd_->H().block<6, 6>(floatingBaseIndex_, floatingBaseIndex_).diagonal().array() * acc.array().abs();
+
+        initializedMaxFBWrenches = true;
+      }
+      torqueU_prime.segment<6>(floatingBaseIndex_) = curMaxFBWrench_;
+      torqueL_prime.segment<6>(floatingBaseIndex_) = -curMaxFBWrench_;
     }
+
+    /// make current limit converge to tarrget value
+    /// this exponential convergence allows to avoid discontinuous torques
+    currentPerc_ = expPhiSlow_ * currentPerc_ + (1 - expPhiSlow_) * targetPerc_;
+    curMaxFBWrench_ = expPhiSlow_ * curMaxFBWrench_ + (1 - expPhiSlow_) * targetMaxFBWrench_;
 
     if(intglTermType_ == PassivityBased)
     {
@@ -225,6 +241,10 @@ void IntegralTerm::computeTerm(const rbd::MultiBody & mb,
     double percU = (diff_torques_for_antiwindup.array() / torqueU_.array()).maxCoeff();
     double percL = (diff_torques_for_antiwindup.array() / torqueL_.array()).maxCoeff();
     currentPerc_ = std::max(std::max(percU, percL), currentPerc_);
+    if(floatingBaseIndex_!=-1)
+    {
+      curMaxFBWrench_ = curMaxFBWrench_.cwiseMax(diff_torques_for_antiwindup.segment<6>(floatingBaseIndex_).cwiseAbs());
+    }      
 
     Eigen::MatrixXd L;   
     if(intglTermType_ == Simple)

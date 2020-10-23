@@ -155,7 +155,9 @@ class IntegralTerm : public TorqueFeedbackTerm
   double fastFilterWeight_;
 
   Eigen::Vector3d maxLinAcc_, maxAngAcc_;
-  
+  Eigen::Vector6d curMaxFBWrench_, targetMaxFBWrench_;
+  bool initializedMaxFBWrenches;
+
   Eigen::VectorXd torqueL_, torqueU_;
   double currentPerc_;
   double targetPerc_;
