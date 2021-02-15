@@ -9,8 +9,13 @@ set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 set(PROJECT_NAME RBDyn)
 set(PROJECT_DESCRIPTION "...")
 set(PROJECT_URL "https://github.com/jrl-umi3218/RBDyn")
-set(PROJECT_DEBUG_POSTFIX "_d")
+
+if (NOT DEFINED PROJECT_DEBUG_POSTFIX)
+    set(PROJECT_DEBUG_POSTFIX "_d")
+endif()
+
 set(PROJECT_VERSION 1.4.0)
+
 set(PROJECT_USE_CMAKE_EXPORT TRUE)
 
 option(BUILD_RBDYN_PARSERS "Build URDF and YAML parsers" ON)
@@ -24,6 +29,7 @@ project(RBDyn CXX)
 option(BENCHMARKS "Generate benchmarks." OFF)
 
 add_project_dependency(SpaceVecAlg REQUIRED NO_MODULE)
+ADD_REQUIRED_DEPENDENCY("jrl-qp")
 
 # For MSVC, set local environment variable to enable finding the built dll
 # of the main library when launching ctest with RUN_TESTS

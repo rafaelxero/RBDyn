@@ -28,7 +28,7 @@ namespace torque_control
 /**
  *    TorqueFeedbackTerm
  */
-  
+
 TorqueFeedbackTerm::TorqueFeedbackTerm(const std::vector<rbd::MultiBody>& mbs, int robotIndex,
                                        const std::shared_ptr<rbd::ForwardDynamics> fd)
   : nrDof_(mbs[robotIndex].nrDof()),
@@ -45,7 +45,7 @@ void TorqueFeedbackTerm::computeGammaD()
 {
   // Alternative method to do
   // gammaD_ = fd_->H().inverse() * P_;
-    
+
   gammaD_ = P_;
   LLT_.compute(fd_->H());
   LLT_.matrixL().solveInPlace(gammaD_);
@@ -56,68 +56,50 @@ ElapsedTimeMap & TorqueFeedbackTerm::getElapsedTimes()
 {
   return elapsed_;
 }
-  
+
 /**
  *    IntegralTerm
  */
 
-IntegralTerm::IntegralTerm(const std::vector<rbd::MultiBody> & mbs, int robotIndex,
+IntegralTerm::IntegralTerm(const std::vector<rbd::MultiBody> & mbs,
+                           int robotIndex,
                            const std::shared_ptr<rbd::ForwardDynamics> fd,
-                           IntegralTermType intglTermType, VelocityGainType velGainType,
-                           double lambda, double phiSlow, double phiFast, double fastFilterWeight, 
+                           IntegralTermType intglTermType,
+                           VelocityGainType velGainType,
+                           double lambda,
+                           double perc,
+                           const Eigen::Vector3d & maxLinAcc,
+                           const Eigen::Vector3d & maxAngAcc,
+                           const Eigen::VectorXd & torqueL,
+                           const Eigen::VectorXd & torqueU,
+                           double phiSlow,
+                           double phiFast,
+                           double fastFilterWeight,
                            double timeStep)
-  : TorqueFeedbackTerm(mbs, robotIndex, fd),
-    intglTermType_(intglTermType),
-    velGainType_(velGainType),
-    lambda_(lambda),
-    coriolis_(mbs[robotIndex]),
-    C_(Eigen::MatrixXd::Zero(nrDof_, nrDof_)),
-    L_(Eigen::MatrixXd::Zero(nrDof_, nrDof_)),
-    previousS_(Eigen::VectorXd::Zero(nrDof_)),
-    fastFilteredS_(Eigen::VectorXd::Zero(nrDof_)),
-    slowFilteredS_(Eigen::VectorXd::Zero(nrDof_)),
-    phiSlow_(phiSlow),
-    phiFast_(phiFast),
-    fastFilterWeight_(fastFilterWeight),
-    timeStep_(timeStep)    
-{
-}
-
-void IntegralTerm::computeGain(const rbd::MultiBody & mb,
-			       const rbd::MultiBodyConfig & mbc_real)
-{
-  Eigen::MatrixXd K;
-
-  // std::cout << "Rafa, in IntegralTerm::computeTerm, fd_->H().rows() = " << fd_->H().rows() << std::endl;
-  
-  if (velGainType_ == MassMatrix)
+: TorqueFeedbackTerm(mbs, robotIndex, fd), intglTermType_(intglTermType), velGainType_(velGainType), lambda_(lambda),
+  coriolis_(mbs[robotIndex]), C_(Eigen::MatrixXd::Zero(nrDof_, nrDof_)), coriolisTerm_(Eigen::VectorXd::Zero(nrDof_)),
+  K_(Eigen::MatrixXd::Zero(nrDof_, nrDof_)), previousS_(Eigen::VectorXd::Zero(nrDof_)),
+  fastFilteredS_(Eigen::VectorXd::Zero(nrDof_)), slowFilteredS_(Eigen::VectorXd::Zero(nrDof_)), phiSlow_(phiSlow),
+  phiFast_(phiFast), expPhiSlow_(exp(-timeStep * phiSlow)), expPhiFast_(exp(-timeStep * phiFast)),
+  fastFilterWeight_(fastFilterWeight), maxLinAcc_(maxLinAcc), maxAngAcc_(maxAngAcc),
+  curMaxFBWrench_(Eigen::Vector6d::Zero()), targetMaxFBWrench_(Eigen::Vector6d::Zero()),
+  initializedMaxFBWrenches(false), torqueL_(torqueL), torqueU_(torqueU), currentPerc_(perc), targetPerc_(perc),
+  floatingBaseIndex_(-1), solver_(mbs[robotIndex].nrJoints()), timeStep_(timeStep)
+{  
+  for(int i = 0; i < mbs[robotIndex].nrJoints(); i++)
   {
-    K = lambda_ * fd_->H();
-  }
-  else if (velGainType_ == MassDiagonal)
-  {
-    K = lambda_ * fd_->H().diagonal().asDiagonal();
-    K.block<6, 6>(0, 0) = lambda_ * Eigen::MatrixXd::Identity(6, 6);  // Rafa, this is a test
-  }
-  else
-  {
-    K = lambda_ * Eigen::MatrixXd::Identity(nrDof_, nrDof_);
-  }
+    if(mbs[robotIndex].joint(i).type() == rbd::Joint::Free)
+    {
+      floatingBaseIndex_ = mbs[robotIndex].jointPosInDof(i);
 
-  // std::cout << "Rafa, in IntegralTerm::computeGain, K = " << std::endl << K << std::endl;
+      /// set the floating base limits to infinity by default
+      /// they will be replaced with wrench limit defined by the max acceleraTion
+      /// this is useful for the transition
+      torqueL_.segment<6>(floatingBaseIndex_).setConstant(- std::numeric_limits<double>::infinity());
+      torqueU_.segment<6>(floatingBaseIndex_).setConstant( std::numeric_limits<double>::infinity());
 
-  clock_t time;
-
-  if (intglTermType_ == PassivityBased)
-  {
-    time = clock();
-    C_ = coriolis_.coriolis(mb, mbc_real);
-    elapsed_.at("computeFbTerm-Gain-Coriolis") = (int) (clock() - time);
-    L_ = (C_ + K);
-  }
-  else
-  {
-    L_ = K;
+      break;
+    }
   }
 }
 
@@ -125,38 +107,120 @@ void IntegralTerm::computeTerm(const rbd::MultiBody & mb,
                                const rbd::MultiBodyConfig & mbc_real,
                                const rbd::MultiBodyConfig & mbc_calc)
 {
-  clock_t time;
-  
-  if (intglTermType_ == Simple || intglTermType_ == PassivityBased)
+  if(intglTermType_ == Simple || intglTermType_ == PassivityBased)
   {
-    time = clock();
     computeGain(mb, mbc_real);
-    elapsed_.at("computeFbTerm-Gain") = (int) (clock() - time);
-    
+
     Eigen::VectorXd alphaVec_ref = rbd::dofToVector(mb, mbc_calc.alpha);
     Eigen::VectorXd alphaVec_hat = rbd::dofToVector(mb, mbc_real.alpha);
-  
-    Eigen::VectorXd s = alphaVec_ref - alphaVec_hat;
+
+    Eigen::VectorXd newS = alphaVec_ref - alphaVec_hat;
+
+    slowFilteredS_ = expPhiSlow_ * slowFilteredS_ + newS - previousS_;
+    fastFilteredS_ = expPhiFast_ * fastFilteredS_ + newS - previousS_;
+
+    previousS_ = newS;
+
+    Eigen::VectorXd filteredS = fastFilterWeight_ * fastFilteredS_ + (1 - fastFilterWeight_) * slowFilteredS_;
+
     
-    slowFilteredS_ = exp(-timeStep_*phiSlow_) * slowFilteredS_ + s- previousS_;
-    fastFilteredS_ = exp(-timeStep_*phiFast_) * fastFilteredS_ + s- previousS_;
+    ///compute the max torque allowed for the integral term
+    Eigen::VectorXd torqueU_prime = torqueU_ * currentPerc_;
+    Eigen::VectorXd torqueL_prime = torqueL_ * currentPerc_;
 
-    previousS_ = s;
+    if(floatingBaseIndex_ != -1)
+    {
+      if (!initializedMaxFBWrenches)
+      {
+        Eigen::Vector6d acc;
+        acc << maxAngAcc_, maxLinAcc_;
 
-    Eigen::VectorXd filteredS = fastFilterWeight_*fastFilteredS_+(1-fastFilterWeight_)*slowFilteredS_;
+        targetMaxFBWrench_ = curMaxFBWrench_ =
+            fd_->H().block<6, 6>(floatingBaseIndex_, floatingBaseIndex_).diagonal().array() * acc.array().abs();
 
-    // std::cout << "Rafa, in computeTerm, filteredS = " << filteredS.transpose() << std::endl;
-    
-    P_ = L_ * filteredS;  // Rafa, this disabled code is just temporary... we have to use this
-    // P_ = L_ * s;
+        initializedMaxFBWrenches = true;
+      }
+      torqueU_prime.segment<6>(floatingBaseIndex_) = curMaxFBWrench_;
+      torqueL_prime.segment<6>(floatingBaseIndex_) = -curMaxFBWrench_;
+    }
 
-    // std::cout << "Rafa, in IntegralTerm::computeTerm, alphaVec_ref = " << alphaVec_ref.transpose() << std::endl;
-    // std::cout << "Rafa, in IntegralTerm::computeTerm, alphaVec_hat = " << alphaVec_hat.transpose() << std::endl;
-    // std::cout << "Rafa, in IntegralTerm::computeTerm, P_ = " << P_.transpose() << std::endl << std::endl;
-    
-    time = clock();
+    /// make current limit converge to tarrget value
+    /// this exponential convergence allows to avoid discontinuous torques
+    currentPerc_ = expPhiSlow_ * currentPerc_ + (1 - expPhiSlow_) * targetPerc_;
+    curMaxFBWrench_ = expPhiSlow_ * curMaxFBWrench_ + (1 - expPhiSlow_) * targetMaxFBWrench_;
+
+    if(intglTermType_ == PassivityBased)
+    {
+      coriolisTerm_ = C_ * filteredS;
+
+      /// CANCELED /// substract the Coriolis term to make sure that the whole integral term
+      /// CANCELED /// is respecting tha antiwindup
+      // torqueU_prime -= coriolisTerm_;
+      // torqueL_prime -= coriolisTerm_;
+    }
+
+    P_ = K_ * filteredS;
+
+    /// get the multiplier of the bound violation
+    double epsilonU = (P_.array() / torqueU_prime.array()).maxCoeff();
+    double epsilonL = (P_.array() / torqueL_prime.array()).maxCoeff();
+    double epsilon = std::max(std::max(epsilonU, epsilonL), 1.);
+
+    Eigen::MatrixXd serror(3, mb.nrDof());
+    serror.row(0) = filteredS.transpose();
+    serror.row(1) = alphaVec_hat.transpose();
+    serror.row(2) = alphaVec_ref.transpose();
+
+    std::cout << "Mehdi  serror   " << std::endl;
+    std::cout << serror << std::endl;
+
+    if(epsilon > 1)
+    {
+      double dotprod = P_.dot(filteredS) / epsilon;
+      std::cout << "Mehdi QP Started" << std::endl;
+
+      if(solver_.solve(P_, filteredS, dotprod, torqueL_prime, torqueU_prime) == jrl::qp::TerminationStatus::SUCCESS)
+      {
+        std::cout << "Mehdi Succeeded" << (solver_.solution() - P_).norm() << " " << (P_ / epsilon - P_).norm()
+                  << std::endl;
+        P_ = solver_.solution();
+      }
+      else
+      {
+        std::cout << "Mehdi QP FAILED" << std::endl;
+        std::cerr << "Mehdi QP FAILED" << std::endl;
+
+        P_ /= epsilon;
+      }
+
+      /// -----------------------------------------testing -------------------------------------
+      {
+        double epsilonU = (P_.array() / torqueU_prime.array()).maxCoeff();
+        double epsilonL = (P_.array() / torqueL_prime.array()).maxCoeff();
+        double epsilon = std::max(std::max(epsilonU, epsilonL), 1.);
+
+        if(epsilon > 1 + 1e-5)
+        {
+          std::cout << "Mehdi Bounds not respected !" << std::endl;
+          std::cerr << "Mehdi Bounds not respected !" << std::endl;
+        }
+        else
+        {
+          if(P_.dot(filteredS) < dotprod + 1e-5)
+          {
+            std::cout << "Mehdi dotProd not respected ! ref " << dotprod << " solution " << P_.dot(filteredS) << std::endl;
+            std::cerr << "Mehdi dotProd not respected ! ref " << dotprod << " solution " << P_.dot(filteredS) << std::endl;
+          }
+        }
+      }
+    }
+
+    if(intglTermType_ == PassivityBased)
+    {
+      P_ += coriolisTerm_;
+    }
+
     computeGammaD();
-    elapsed_.at("computeFbTerm-GammaD") = (int) (clock() - time);
   }
 }
 
@@ -167,92 +231,75 @@ void IntegralTerm::computeTerm(const rbd::MultiBody & mb,
 {
   computeTerm(mb, mbc_real, mbc_calc);
 
-  std::cout << "Rafa, in IntegralTerm::computeTerm for smooth transition, diff_torques = " << diff_torques.transpose() << std::endl;
+  std::cout << "Rafa, in IntegralTerm::computeTerm for smooth transition, diff_torques = " << diff_torques.transpose()
+            << std::endl;
 
-  if (intglTermType_ == Simple || intglTermType_ == PassivityBased)
-  {
   
-    if (fastFilterWeight_ < 1) {
-      slowFilteredS_ = L_.inverse() * diff_torques / (1 - fastFilterWeight_);
+  if(intglTermType_ == Simple || intglTermType_ == PassivityBased)
+  {
+    Eigen::VectorXd diff_torques_for_antiwindup = diff_torques - coriolisTerm_;
+    double percU = (diff_torques_for_antiwindup.array() / torqueU_.array()).maxCoeff();
+    double percL = (diff_torques_for_antiwindup.array() / torqueL_.array()).maxCoeff();
+    currentPerc_ = std::max(std::max(percU, percL), currentPerc_);
+    if(floatingBaseIndex_!=-1)
+    {
+      curMaxFBWrench_ = curMaxFBWrench_.cwiseMax(diff_torques_for_antiwindup.segment<6>(floatingBaseIndex_).cwiseAbs());
+    }      
+
+    Eigen::MatrixXd L;   
+    if(intglTermType_ == Simple)
+    {
+      L = K_;
+    }
+    else
+    {
+      L = K_ + C_;
+    }
+
+    if(fastFilterWeight_ < 1)
+    {
+      slowFilteredS_ = L.inverse() * diff_torques / (1 - fastFilterWeight_);
       fastFilteredS_.setZero();
     }
-    else {
+    else
+    {
       slowFilteredS_.setZero();
-      fastFilteredS_ = L_.inverse() * diff_torques / fastFilterWeight_;
+      fastFilteredS_ = L.inverse() * diff_torques / fastFilterWeight_;
     }
-    
-    Eigen::VectorXd filteredS = fastFilterWeight_*fastFilteredS_+(1-fastFilterWeight_)*slowFilteredS_;
-    P_ = L_ * filteredS;
-    
+
+     P_ = diff_torques;
+
     std::cout << "Rafa, in IntegralTerm::computeTerm for smooth transition, P_ = " << P_.transpose() << std::endl;
   }
 }
 
-/**
- *    IntegralTermAntiWindup
- */
-
-IntegralTermAntiWindup::IntegralTermAntiWindup(const std::vector<rbd::MultiBody> & mbs, int robotIndex,
-					       const std::shared_ptr<rbd::ForwardDynamics> fd,
-					       IntegralTermType intglTermType,
-					       VelocityGainType velGainType,
-					       double lambda, double perc,
-					       const Eigen::Vector3d & maxLinAcc,
-					       const Eigen::Vector3d & maxAngAcc,
-					       const Eigen::VectorXd & torqueL,
-					       const Eigen::VectorXd & torqueU,
-                                               double phiSlow, double phiFast, double fastFilterWeight, 
-                                               double timeStep)
-  : IntegralTerm(mbs, robotIndex, fd, intglTermType, velGainType, 
-                 lambda, phiSlow, phiFast, fastFilterWeight, timeStep),
-    perc_(perc), maxLinAcc_(maxLinAcc), maxAngAcc_(maxAngAcc),
-    torqueL_(torqueL), torqueU_(torqueU)
-{}
-
-void IntegralTermAntiWindup::computeTerm(const rbd::MultiBody & mb,
-					 const rbd::MultiBodyConfig & mbc_real,
-					 const rbd::MultiBodyConfig & mbc_calc)
+void IntegralTerm::computeGain(const rbd::MultiBody & mb, const rbd::MultiBodyConfig & mbc_real)
 {
-  if (intglTermType_ == Simple || intglTermType_ == PassivityBased)
+  // std::cout << "Rafa, in IntegralTerm::computeTerm, fd_->H().rows() = " << fd_->H().rows() << std::endl;
+
+  if(velGainType_ == MassMatrix)
   {
-    computeGain(mb, mbc_real);
+    K_ = lambda_ * fd_->H();
+  }
+  else if(velGainType_ == MassDiagonal)
+  {
+    K_ = lambda_ * fd_->H().diagonal().asDiagonal();
+  }
+  else
+  {
+    K_ = lambda_ * Eigen::MatrixXd::Identity(nrDof_, nrDof_);
+  }
 
-    Eigen::VectorXd alphaVec_ref = rbd::dofToVector(mb, mbc_calc.alpha);
-    Eigen::VectorXd alphaVec_hat = rbd::dofToVector(mb, mbc_real.alpha);
-    
-    Eigen::VectorXd s = alphaVec_ref - alphaVec_hat;
-    P_ = L_ * s;
+  clock_t time;
 
-    Eigen::VectorXd torqueU_prime = torqueU_ * perc_;
-    Eigen::VectorXd torqueL_prime = torqueL_ * perc_;
-    
-    for (int i = 0; i < mb.nrJoints(); i++)
-      if (mb.joint(i).type() == rbd::Joint::Free)
-      {
-        int j = mb.jointPosInDof(i);
-        Eigen::Vector6d acc;
-	acc << maxAngAcc_, maxLinAcc_;
-        torqueU_prime.segment<6>(j) = fd_->H().block<6, 6>(j, j).diagonal().asDiagonal() * acc;
-        torqueL_prime.segment<6>(j) = -torqueU_prime.segment<6>(j);
-        break;
-      }
-
-    double epsilonU = (abs(P_.array() / torqueU_prime.array())).maxCoeff();
-    double epsilonL = (abs(P_.array() / torqueL_prime.array())).maxCoeff();
-    double epsilon  = std::max(epsilonU, epsilonL);
-
-    // std::cout << "Rafa, in IntegralTermAntiWindup::computeTerm, before antiwindup, P_ = " << P_.transpose() << std::endl;
-    // std::cout << "Rafa, in IntegralTermAntiWindup::computeTerm, before antiwindup, torqueU_prime = " << torqueU_prime.transpose() << std::endl;    
-    // std::cout << "Rafa, in IntegralTermAntiWindup::computeTerm, before antiwindup, epsilon = " << epsilon << std::endl;
-    
-    if (epsilon > 1) {
-      P_ /= epsilon;
-    }
-    
-    computeGammaD();
+  if(intglTermType_ == PassivityBased)
+  {
+    time = clock();
+    C_ = coriolis_.coriolis(mb, mbc_real);
+    elapsed_.at("computeFbTerm-Gain-Coriolis") = (int)(clock() - time);
   }
 }
-  
+
 /**
   *    PassivityPIDTerm
   */
@@ -272,19 +319,19 @@ PassivityPIDTerm::PassivityPIDTerm(const std::vector<rbd::MultiBody> & mbs, int 
     C_(Eigen::MatrixXd::Zero(nrDof_, nrDof_))
 {
 }
-  
+
 void PassivityPIDTerm::computeTerm(const rbd::MultiBody & mb,
                                    const rbd::MultiBodyConfig & mbc_real,
                                    const rbd::MultiBodyConfig & mbc_calc)
 {
   const Eigen::MatrixXd & M = fd_->H();
-  
+
   C_ = coriolis_.coriolis(mb, mbc_real);
 
   Eigen::MatrixXd Ka = beta_  * M;
   //Eigen::MatrixXd L  = sigma_ * M.diagonal().asDiagonal();
   Eigen::MatrixXd L  = sigma_ * M;
-  
+
   Eigen::MatrixXd Kv = lambda_ * M + C_ + Ka;
   Eigen::MatrixXd Kp = mu_ * M + lambda_ * (C_ + Ka) + L;
   Eigen::MatrixXd Ki = mu_ * (C_ + Ka) + cis_ * lambda_ * L;
@@ -309,7 +356,7 @@ void PassivityPIDTerm::computeTerm(const rbd::MultiBody & mb,
   EPrev_ = E;
 
   P_ = Kv * s + Kp * e + Ki * E;
-  
+
   computeGammaD();
 }
 
@@ -318,7 +365,7 @@ Eigen::VectorXd PassivityPIDTerm::errorParam(rbd::Joint::Type type,
                                              const std::vector<double> & q_hat)
 {
   Eigen::VectorXd e;
-  
+
   switch (type) {
 
   case rbd::Joint::Rev:
