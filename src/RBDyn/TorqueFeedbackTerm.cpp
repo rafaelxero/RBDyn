@@ -83,8 +83,8 @@ IntegralTerm::IntegralTerm(const std::vector<rbd::MultiBody> & mbs,
   phiFast_(phiFast), expPhiSlow_(exp(-timeStep * phiSlow)), expPhiFast_(exp(-timeStep * phiFast)),
   fastFilterWeight_(fastFilterWeight), maxLinAcc_(maxLinAcc), maxAngAcc_(maxAngAcc), 
   curMaxFBWrench_(Eigen::Vector6d::Zero()), targetMaxFBWrench_(Eigen::Vector6d::Zero()), 
-  initializedMaxFBWrenches(false),  timeStep_(timeStep), targetPerc_(perc), currentPerc_(perc),
-   torqueL_(torqueL), torqueU_(torqueU), floatingBaseIndex_(-1),  solver_(mbs[robotIndex].nrJoints())
+  initializedMaxFBWrenches(false), timeStep_(timeStep), targetPerc_(perc), currentPerc_(perc),
+  torqueL_(torqueL), torqueU_(torqueU), floatingBaseIndex_(-1), solver_(mbs[robotIndex].nrJoints())
 {  
   for(int i = 0; i < mbs[robotIndex].nrJoints(); i++)
   {
@@ -123,6 +123,10 @@ void IntegralTerm::computeTerm(const rbd::MultiBody & mb,
 
     Eigen::VectorXd filteredS = fastFilterWeight_ * fastFilteredS_ + (1 - fastFilterWeight_) * slowFilteredS_;
 
+    if (taskSpaceJacobians_.size() > 0)  // Added by Rafa as a test
+      for (const std::pair<std::string, const Eigen::MatrixXd*> taskSpaceJacobian : taskSpaceJacobians_)
+        std::cout << "Rafa, for " << taskSpaceJacobian.first << " the Jacobian is"
+                  << std::endl << *(taskSpaceJacobian.second) << std::endl << std::endl;
     
     ///compute the max torque allowed for the integral term
     Eigen::VectorXd torqueU_prime = torqueU_ * currentPerc_;

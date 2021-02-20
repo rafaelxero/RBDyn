@@ -27,8 +27,8 @@
 #include <RBDyn/Joint.h>
 #include <RBDyn/Coriolis.h>
 
-
 #include <jrl-qp/experimental/BoxAndSingleConstraintSolver.h>
+
 namespace torque_control
 {
 
@@ -96,8 +96,9 @@ class IntegralTerm : public TorqueFeedbackTerm
     MassDiagonal,
     MassMatrix
   };
- ///TorqueL is teh lower bound dor the torque
- ///TorqueU is the upper bound for the torque
+  
+  /// TorqueL is the lower bound for the torque
+  /// TorqueU is the upper bound for the torque
 
   IntegralTerm(const std::vector<rbd::MultiBody> & mbs,
                int robotIndex,
@@ -132,6 +133,11 @@ class IntegralTerm : public TorqueFeedbackTerm
     return C_;
   }
 
+  void setTaskSpaceJacobian(const std::string & descriptor, const Eigen::MatrixXd & Jac)
+  {
+    taskSpaceJacobians_[descriptor] = &Jac;
+  }
+  
  protected:
 
   IntegralTermType intglTermType_;
@@ -164,11 +170,10 @@ class IntegralTerm : public TorqueFeedbackTerm
 
   int floatingBaseIndex_;
   jrl::qp::experimental::BoxAndSingleConstraintSolver solver_;
-
-
+  
   double timeStep_;
 
-
+  std::map<std::string, const Eigen::MatrixXd*> taskSpaceJacobians_;
 };
 
 class PassivityPIDTerm : public TorqueFeedbackTerm
