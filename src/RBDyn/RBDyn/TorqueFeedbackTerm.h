@@ -138,6 +138,11 @@ class IntegralTerm : public TorqueFeedbackTerm
     taskSpaceJacobians_[descriptor] = &Jac;
   }
   
+  void setTaskSpaceJacobianDot(const std::string & descriptor, const Eigen::MatrixXd & JacDot)
+  {
+    taskSpaceJacobianDots_[descriptor] = &JacDot;
+  }
+  
  protected:
 
   IntegralTermType intglTermType_;
@@ -174,6 +179,7 @@ class IntegralTerm : public TorqueFeedbackTerm
   double timeStep_;
 
   std::map<std::string, const Eigen::MatrixXd*> taskSpaceJacobians_;
+  std::map<std::string, const Eigen::MatrixXd*> taskSpaceJacobianDots_;
 };
 
 class PassivityPIDTerm : public TorqueFeedbackTerm

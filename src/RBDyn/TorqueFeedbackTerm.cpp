@@ -127,6 +127,11 @@ void IntegralTerm::computeTerm(const rbd::MultiBody & mb,
       for (const std::pair<std::string, const Eigen::MatrixXd*> taskSpaceJacobian : taskSpaceJacobians_)
         std::cout << "Rafa, for " << taskSpaceJacobian.first << " the Jacobian is"
                   << std::endl << *(taskSpaceJacobian.second) << std::endl << std::endl;
+
+    if (taskSpaceJacobianDots_.size() > 0)  // Added by Rafa as a test
+      for (const std::pair<std::string, const Eigen::MatrixXd*> taskSpaceJacobianDot : taskSpaceJacobianDots_)
+        std::cout << "Rafa, for " << taskSpaceJacobianDot.first << " the JacobianDot is"
+                  << std::endl << *(taskSpaceJacobianDot.second) << std::endl << std::endl;
     
     ///compute the max torque allowed for the integral term
     Eigen::VectorXd torqueU_prime = torqueU_ * currentPerc_;
@@ -175,8 +180,8 @@ void IntegralTerm::computeTerm(const rbd::MultiBody & mb,
     serror.row(1) = alphaVec_hat.transpose();
     serror.row(2) = alphaVec_ref.transpose();
 
-    std::cout << "Mehdi  serror   " << std::endl;
-    std::cout << serror << std::endl;
+    // std::cout << "Mehdi  serror   " << std::endl;
+    // std::cout << serror << std::endl;
 
     if(epsilon > 1)
     {
