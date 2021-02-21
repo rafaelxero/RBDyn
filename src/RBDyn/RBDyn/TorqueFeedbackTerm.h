@@ -142,6 +142,26 @@ class IntegralTerm : public TorqueFeedbackTerm
   {
     taskSpaceJacobianDots_[descriptor] = &JacDot;
   }
+
+  void setTaskSpaceErrorP(const std::string & descriptor, const Eigen::Vector3d & errorP)
+  {
+    taskSpaceErrorsP_[descriptor] = &errorP;
+  }
+
+  void setTaskSpaceErrorR(const std::string & descriptor, const Eigen::Matrix3d & errorR)
+  {
+    taskSpaceErrorsR_[descriptor] = &errorR;
+  }
+  
+  void setTaskSpaceErrorV(const std::string & descriptor, const Eigen::Vector3d & errorV)
+  {
+    taskSpaceErrorsV_[descriptor] = &errorV;
+  }
+
+  void setTaskSpaceErrorW(const std::string & descriptor, const Eigen::Vector3d & errorW)
+  {
+    taskSpaceErrorsW_[descriptor] = &errorW;
+  }
   
  protected:
 
@@ -180,6 +200,11 @@ class IntegralTerm : public TorqueFeedbackTerm
 
   std::map<std::string, const Eigen::MatrixXd*> taskSpaceJacobians_;
   std::map<std::string, const Eigen::MatrixXd*> taskSpaceJacobianDots_;
+  
+  std::map<std::string, const Eigen::Vector3d*> taskSpaceErrorsP_;
+  std::map<std::string, const Eigen::Matrix3d*> taskSpaceErrorsR_;
+  std::map<std::string, const Eigen::Vector3d*> taskSpaceErrorsV_;
+  std::map<std::string, const Eigen::Vector3d*> taskSpaceErrorsW_;
 };
 
 class PassivityPIDTerm : public TorqueFeedbackTerm

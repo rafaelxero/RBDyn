@@ -132,6 +132,26 @@ void IntegralTerm::computeTerm(const rbd::MultiBody & mb,
       for (const std::pair<std::string, const Eigen::MatrixXd*> taskSpaceJacobianDot : taskSpaceJacobianDots_)
         std::cout << "Rafa, for " << taskSpaceJacobianDot.first << " the JacobianDot is"
                   << std::endl << *(taskSpaceJacobianDot.second) << std::endl << std::endl;
+
+    if (taskSpaceErrorsP_.size() > 0)  // Added by Rafa as a test
+      for (const std::pair<std::string, const Eigen::Vector3d*> taskSpaceErrorP : taskSpaceErrorsP_)
+        std::cout << "Rafa, for " << taskSpaceErrorP.first << " the error in position is "
+                  << taskSpaceErrorP.second->transpose() << std::endl << std::endl;
+
+    if (taskSpaceErrorsR_.size() > 0)  // Added by Rafa as a test
+      for (const std::pair<std::string, const Eigen::Matrix3d*> taskSpaceErrorR : taskSpaceErrorsR_)
+        std::cout << "Rafa, for " << taskSpaceErrorR.first << " the error in orientation is"
+                  << std::endl << *(taskSpaceErrorR.second) << std::endl << std::endl;
+
+    if (taskSpaceErrorsV_.size() > 0)  // Added by Rafa as a test
+      for (const std::pair<std::string, const Eigen::Vector3d*> taskSpaceErrorV : taskSpaceErrorsV_)
+        std::cout << "Rafa, for " << taskSpaceErrorV.first << " the error in linear velocity is "
+                  << taskSpaceErrorV.second->transpose() << std::endl << std::endl;
+
+    if (taskSpaceErrorsW_.size() > 0)  // Added by Rafa as a test
+      for (const std::pair<std::string, const Eigen::Vector3d*> taskSpaceErrorW : taskSpaceErrorsW_)
+        std::cout << "Rafa, for " << taskSpaceErrorW.first << " the error in angular velocity is "
+                  << taskSpaceErrorW.second->transpose() << std::endl << std::endl;
     
     ///compute the max torque allowed for the integral term
     Eigen::VectorXd torqueU_prime = torqueU_ * currentPerc_;
