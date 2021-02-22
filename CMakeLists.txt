@@ -24,6 +24,9 @@ include(cmake/base.cmake)
 include(cmake/cython/cython.cmake)
 include(cmake/msvc-specific.cmake)
 
+# Disable -Werror on Unix for now.
+set(CXX_DISABLE_WERROR True)
+
 project(RBDyn CXX)
 
 option(BENCHMARKS "Generate benchmarks." OFF)

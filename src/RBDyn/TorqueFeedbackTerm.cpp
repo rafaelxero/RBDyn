@@ -123,6 +123,35 @@ void IntegralTerm::computeTerm(const rbd::MultiBody & mb,
 
     Eigen::VectorXd filteredS = fastFilterWeight_ * fastFilteredS_ + (1 - fastFilterWeight_) * slowFilteredS_;
 
+    if (taskSpaceJacobians_.size() > 0)  // Added by Rafa as a test
+      for (const std::pair<std::string, const Eigen::MatrixXd*> taskSpaceJacobian : taskSpaceJacobians_)
+        std::cout << "Rafa, for " << taskSpaceJacobian.first << " the Jacobian is"
+                  << std::endl << *(taskSpaceJacobian.second) << std::endl << std::endl;
+
+    if (taskSpaceJacobianDots_.size() > 0)  // Added by Rafa as a test
+      for (const std::pair<std::string, const Eigen::MatrixXd*> taskSpaceJacobianDot : taskSpaceJacobianDots_)
+        std::cout << "Rafa, for " << taskSpaceJacobianDot.first << " the JacobianDot is"
+                  << std::endl << *(taskSpaceJacobianDot.second) << std::endl << std::endl;
+
+    if (taskSpaceErrorsP_.size() > 0)  // Added by Rafa as a test
+      for (const std::pair<std::string, const Eigen::Vector3d*> taskSpaceErrorP : taskSpaceErrorsP_)
+        std::cout << "Rafa, for " << taskSpaceErrorP.first << " the error in position is "
+                  << taskSpaceErrorP.second->transpose() << std::endl << std::endl;
+
+    if (taskSpaceErrorsR_.size() > 0)  // Added by Rafa as a test
+      for (const std::pair<std::string, const Eigen::Matrix3d*> taskSpaceErrorR : taskSpaceErrorsR_)
+        std::cout << "Rafa, for " << taskSpaceErrorR.first << " the error in orientation is"
+                  << std::endl << *(taskSpaceErrorR.second) << std::endl << std::endl;
+
+    if (taskSpaceErrorsV_.size() > 0)  // Added by Rafa as a test
+      for (const std::pair<std::string, const Eigen::Vector3d*> taskSpaceErrorV : taskSpaceErrorsV_)
+        std::cout << "Rafa, for " << taskSpaceErrorV.first << " the error in linear velocity is "
+                  << taskSpaceErrorV.second->transpose() << std::endl << std::endl;
+
+    if (taskSpaceErrorsW_.size() > 0)  // Added by Rafa as a test
+      for (const std::pair<std::string, const Eigen::Vector3d*> taskSpaceErrorW : taskSpaceErrorsW_)
+        std::cout << "Rafa, for " << taskSpaceErrorW.first << " the error in angular velocity is "
+                  << taskSpaceErrorW.second->transpose() << std::endl << std::endl;
     
     ///compute the max torque allowed for the integral term
     Eigen::VectorXd torqueU_prime = torqueU_ * currentPerc_;
@@ -171,8 +200,8 @@ void IntegralTerm::computeTerm(const rbd::MultiBody & mb,
     serror.row(1) = alphaVec_hat.transpose();
     serror.row(2) = alphaVec_ref.transpose();
 
-    std::cout << "Mehdi  serror   " << std::endl;
-    std::cout << serror << std::endl;
+    // std::cout << "Mehdi  serror   " << std::endl;
+    // std::cout << serror << std::endl;
 
     if(epsilon > 1)
     {
@@ -370,41 +399,28 @@ Eigen::VectorXd PassivityPIDTerm::errorParam(rbd::Joint::Type type,
 
   case rbd::Joint::Rev:
   case rbd::Joint::Prism:
-    {
-      e.resize(1);
-      e[0] = (q_ref[0] - q_hat[0]);
-      break;
-    }
+
+    e.resize(1);
+    e[0] = (q_ref[0] - q_hat[0]);
+    break;
 
   case rbd::Joint::Free:
-    {
-      e.resize(6);
-    
-      Eigen::Quaterniond quat_ref(q_ref[0], q_ref[1], q_ref[2], q_ref[3]);
-      Eigen::Quaterniond quat_hat(q_hat[0], q_hat[1], q_hat[2], q_hat[3]);
 
-      Eigen::MatrixXd Re = quat_ref.normalized().toRotationMatrix() * quat_hat.normalized().toRotationMatrix().transpose();
-      Eigen::MatrixXd Sw = Re.log();
+    e.resize(6);
 
-      e[0] = Sw(2, 1);
-      e[1] = Sw(0, 2);
-      e[2] = Sw(1, 0);
+    Eigen::Quaterniond quat_ref(q_ref[0], q_ref[1], q_ref[2], q_ref[3]);
+    Eigen::Quaterniond quat_hat(q_hat[0], q_hat[1], q_hat[2], q_hat[3]);
 
-      for (std::size_t i = 0; i < 3; i++)
-        e[3 + i] = q_ref[4 + i] - q_hat[4 + i];
-      
-      break;
-    }
+    Eigen::MatrixXd Re = quat_ref.normalized().toRotationMatrix() * quat_hat.normalized().toRotationMatrix().transpose();
+    Eigen::MatrixXd Sw = Re.log();
 
-  case rbd::Joint::Spherical:
-  case rbd::Joint::Planar:
-  case rbd::Joint::Fixed:
-  case rbd::Joint::Rev_Fixed:
-  default:
+    e[0] = Sw(2, 1);
+    e[1] = Sw(0, 2);
+    e[2] = Sw(1, 0);
 
-    // Rafa, fix this properly later...
-    std::cout << "[PassivityPIDTerm] error not defined for Joint type " << type << std::endl;
-    
+    for (std::size_t i = 0; i < 3; i++)
+      e[3 + i] = q_ref[4 + i] - q_hat[4 + i];
+
     break;
   }
 
