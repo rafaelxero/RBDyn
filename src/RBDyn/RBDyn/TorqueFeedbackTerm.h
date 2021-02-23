@@ -128,6 +128,8 @@ class IntegralTerm : public TorqueFeedbackTerm
                    const rbd::MultiBodyConfig & mbc_calc,
                    const Eigen::VectorXd & diff_torques);
 
+  void enableNullSpaceCompliance(bool b);
+
   const Eigen::MatrixXd & CoriolisFactorization() const
   {
     return C_;
@@ -169,11 +171,15 @@ class IntegralTerm : public TorqueFeedbackTerm
   VelocityGainType velGainType_;
   double lambda_;
 
+  bool enableNullSpaceCompliance_;
+
   rbd::Coriolis coriolis_;
   Eigen::MatrixXd C_;
   Eigen::VectorXd coriolisTerm_;
   Eigen::MatrixXd K_;
 
+  Eigen::VectorXd intdjs_slow_;
+  Eigen::VectorXd intdjs_fast_;
   Eigen::VectorXd previousS_;
 
   Eigen::VectorXd fastFilteredS_;
@@ -195,7 +201,6 @@ class IntegralTerm : public TorqueFeedbackTerm
 
   int floatingBaseIndex_;
   jrl::qp::experimental::BoxAndSingleConstraintSolver solver_;
-
 
   double timeStep_;
 

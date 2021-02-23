@@ -77,14 +77,16 @@ IntegralTerm::IntegralTerm(const std::vector<rbd::MultiBody> & mbs,
                            double fastFilterWeight,
                            double timeStep)
 : TorqueFeedbackTerm(mbs, robotIndex, fd), intglTermType_(intglTermType), velGainType_(velGainType), lambda_(lambda),
-  coriolis_(mbs[robotIndex]), C_(Eigen::MatrixXd::Zero(nrDof_, nrDof_)), coriolisTerm_(Eigen::VectorXd::Zero(nrDof_)),
-  K_(Eigen::MatrixXd::Zero(nrDof_, nrDof_)), previousS_(Eigen::VectorXd::Zero(nrDof_)),
-  fastFilteredS_(Eigen::VectorXd::Zero(nrDof_)), slowFilteredS_(Eigen::VectorXd::Zero(nrDof_)), phiSlow_(phiSlow),
-  phiFast_(phiFast), expPhiSlow_(exp(-timeStep * phiSlow)), expPhiFast_(exp(-timeStep * phiFast)),
-  fastFilterWeight_(fastFilterWeight), maxLinAcc_(maxLinAcc), maxAngAcc_(maxAngAcc),
-  curMaxFBWrench_(Eigen::Vector6d::Zero()), targetMaxFBWrench_(Eigen::Vector6d::Zero()),
-  initializedMaxFBWrenches(false), torqueL_(torqueL), torqueU_(torqueU), currentPerc_(perc), targetPerc_(perc),
-  floatingBaseIndex_(-1), solver_(mbs[robotIndex].nrJoints()), timeStep_(timeStep)
+  enableNullSpaceCompliance_(false), coriolis_(mbs[robotIndex]), C_(Eigen::MatrixXd::Zero(nrDof_, nrDof_)),
+  coriolisTerm_(Eigen::VectorXd::Zero(nrDof_)), K_(Eigen::MatrixXd::Zero(nrDof_, nrDof_)),
+  intdjs_slow_(Eigen::VectorXd::Zero(nrDof_)), intdjs_fast_(Eigen::VectorXd::Zero(nrDof_)),
+  previousS_(Eigen::VectorXd::Zero(nrDof_)), fastFilteredS_(Eigen::VectorXd::Zero(nrDof_)),
+  slowFilteredS_(Eigen::VectorXd::Zero(nrDof_)), phiSlow_(phiSlow), phiFast_(phiFast),
+  expPhiSlow_(exp(-timeStep * phiSlow)), expPhiFast_(exp(-timeStep * phiFast)), fastFilterWeight_(fastFilterWeight),
+  maxLinAcc_(maxLinAcc), maxAngAcc_(maxAngAcc), curMaxFBWrench_(Eigen::Vector6d::Zero()),
+  targetMaxFBWrench_(Eigen::Vector6d::Zero()), initializedMaxFBWrenches(false), torqueL_(torqueL), torqueU_(torqueU),
+  currentPerc_(perc), targetPerc_(perc), floatingBaseIndex_(-1), solver_(mbs[robotIndex].nrJoints()),
+  timeStep_(timeStep)
 {  
   for(int i = 0; i < mbs[robotIndex].nrJoints(); i++)
   {
@@ -121,39 +123,124 @@ void IntegralTerm::computeTerm(const rbd::MultiBody & mb,
 
     previousS_ = newS;
 
-    Eigen::VectorXd filteredS = fastFilterWeight_ * fastFilteredS_ + (1 - fastFilterWeight_) * slowFilteredS_;
+    typedef std::map<std::string, const Eigen::MatrixXd *> matrixMap;
+    matrixMap::iterator JacobianPair, JacobianDotPair;
+    const Eigen::MatrixXd * taskJacobian =0x0;
+    const Eigen::MatrixXd * taskJacobianDot =0x0;
 
-    if (taskSpaceJacobians_.size() > 0)  // Added by Rafa as a test
-      for (const std::pair<std::string, const Eigen::MatrixXd*> taskSpaceJacobian : taskSpaceJacobians_)
-        std::cout << "Rafa, for " << taskSpaceJacobian.first << " the Jacobian is"
-                  << std::endl << *(taskSpaceJacobian.second) << std::endl << std::endl;
+    if(enableNullSpaceCompliance_)
+    {
+      if((JacobianPair = taskSpaceJacobians_.find("rhand-pose-task")) != taskSpaceJacobians_.end()
+         && (JacobianDotPair = taskSpaceJacobianDots_.find("rhand-pose-task")) != taskSpaceJacobianDots_.end())
 
-    if (taskSpaceJacobianDots_.size() > 0)  // Added by Rafa as a test
-      for (const std::pair<std::string, const Eigen::MatrixXd*> taskSpaceJacobianDot : taskSpaceJacobianDots_)
-        std::cout << "Rafa, for " << taskSpaceJacobianDot.first << " the JacobianDot is"
-                  << std::endl << *(taskSpaceJacobianDot.second) << std::endl << std::endl;
+      {
+        taskJacobian = JacobianPair->second;
+        taskJacobianDot = JacobianDotPair->second;
+      }
+      else
+      {
+        std::cout << "Mehdi... Jacobian or Jacobian dot not available, Deactivating Null space compliance";
+        enableNullSpaceCompliance_ = false;
+      }
+    }
 
-    if (taskSpaceErrorsP_.size() > 0)  // Added by Rafa as a test
-      for (const std::pair<std::string, const Eigen::Vector3d*> taskSpaceErrorP : taskSpaceErrorsP_)
-        std::cout << "Rafa, for " << taskSpaceErrorP.first << " the error in position is "
-                  << taskSpaceErrorP.second->transpose() << std::endl << std::endl;
+    // if (taskSpaceJacobians_.size() > 0)  // Added by Rafa as a test
+    //   for (const std::pair<std::string, const Eigen::MatrixXd*> taskSpaceJacobian : taskSpaceJacobians_)
+    //     std::cout << "Rafa, for " << taskSpaceJacobian.first << " the Jacobian is"
+    //               << std::endl << *(taskSpaceJacobian.second) << std::endl << std::endl;
 
-    if (taskSpaceErrorsR_.size() > 0)  // Added by Rafa as a test
-      for (const std::pair<std::string, const Eigen::Matrix3d*> taskSpaceErrorR : taskSpaceErrorsR_)
-        std::cout << "Rafa, for " << taskSpaceErrorR.first << " the error in orientation is"
-                  << std::endl << *(taskSpaceErrorR.second) << std::endl << std::endl;
+    // if (taskSpaceJacobianDots_.size() > 0)  // Added by Rafa as a test
+    //   for (const std::pair<std::string, const Eigen::MatrixXd*> taskSpaceJacobianDot : taskSpaceJacobianDots_)
+    //     std::cout << "Rafa, for " << taskSpaceJacobianDot.first << " the JacobianDot is"
+    //               << std::endl << *(taskSpaceJacobianDot.second) << std::endl << std::endl;
 
-    if (taskSpaceErrorsV_.size() > 0)  // Added by Rafa as a test
-      for (const std::pair<std::string, const Eigen::Vector3d*> taskSpaceErrorV : taskSpaceErrorsV_)
-        std::cout << "Rafa, for " << taskSpaceErrorV.first << " the error in linear velocity is "
-                  << taskSpaceErrorV.second->transpose() << std::endl << std::endl;
+    // if (taskSpaceErrorsP_.size() > 0)  // Added by Rafa as a test
+    //   for (const std::pair<std::string, const Eigen::Vector3d*> taskSpaceErrorP : taskSpaceErrorsP_)
+    //     std::cout << "Rafa, for " << taskSpaceErrorP.first << " the error in position is "
+    //               << taskSpaceErrorP.second->transpose() << std::endl << std::endl;
 
-    if (taskSpaceErrorsW_.size() > 0)  // Added by Rafa as a test
-      for (const std::pair<std::string, const Eigen::Vector3d*> taskSpaceErrorW : taskSpaceErrorsW_)
-        std::cout << "Rafa, for " << taskSpaceErrorW.first << " the error in angular velocity is "
-                  << taskSpaceErrorW.second->transpose() << std::endl << std::endl;
+    // if (taskSpaceErrorsR_.size() > 0)  // Added by Rafa as a test
+    //   for (const std::pair<std::string, const Eigen::Matrix3d*> taskSpaceErrorR : taskSpaceErrorsR_)
+    //     std::cout << "Rafa, for " << taskSpaceErrorR.first << " the error in orientation is"
+    //               << std::endl << *(taskSpaceErrorR.second) << std::endl << std::endl;
+
+    // if (taskSpaceErrorsV_.size() > 0)  // Added by Rafa as a test
+    //   for (const std::pair<std::string, const Eigen::Vector3d*> taskSpaceErrorV : taskSpaceErrorsV_)
+    //     std::cout << "Rafa, for " << taskSpaceErrorV.first << " the error in linear velocity is "
+    //               << taskSpaceErrorV.second->transpose() << std::endl << std::endl;
+
+    // if (taskSpaceErrorsW_.size() > 0)  // Added by Rafa as a test
+    //   for (const std::pair<std::string, const Eigen::Vector3d*> taskSpaceErrorW : taskSpaceErrorsW_)
+    //     std::cout << "Rafa, for " << taskSpaceErrorW.first << " the error in angular velocity is "
+    //               << taskSpaceErrorW.second->transpose() << std::endl << std::endl;
+
     
-    ///compute the max torque allowed for the integral term
+    // {
+    //   jjt\leftarrow & J * J.transpose()
+    //   jjtinv\leftarrow & jjt.inv()
+    //   jplus\leftarrow & J.transpose() * jjtinv 
+    //   djjt\leftarrow &\dot{J} * J.transpose()
+    //   djjt\leftarrow & djjt + djjt.transpose()
+    //   djjtinv\leftarrow & -jjtinv * djjt * jjtinv
+    //   djplus\leftarrow &\dot{J}.transpose() * jjtinv - J.transpose() * jjtinv * djjt * jjtinv
+    //   intdjs\leftarrow & expslow * intdjs +\dot{J} * s
+    //   a\leftarrow & s - jplus * intdjs
+    //   term\leftarrow &- M * jplus *\dot{J} * s - M * djplus * intdjs
+    //     }
+
+    Eigen::VectorXd a_slow = slowFilteredS_;
+    Eigen::VectorXd a_fast = fastFilteredS_;
+    Eigen::VectorXd additionalTerms(a_slow.size());
+    Eigen::MatrixXd K_jj = K_;
+    additionalTerms.setZero();
+
+    
+
+    if (enableNullSpaceCompliance_)
+    {
+
+      Eigen::MatrixXd identity(taskJacobian->rows(), taskJacobian->rows());
+      Eigen::VectorXd identityDiag(taskJacobian->rows());
+
+
+
+      Eigen::MatrixXd jjt, jjtinv, jplus, djjt, djjtinv, djplus, jplusj;
+      jjt = (*taskJacobian) * taskJacobian->transpose();
+      identityDiag.setConstant(0.01 * jjt.eigenvalues().real().array().maxCoeff());
+      identity = identityDiag.asDiagonal();
+      identity.setZero();
+      jjtinv = (jjt + identity).inverse();
+      jplus = taskJacobian->transpose() * jjtinv;
+      //jplus = taskJacobian->completeOrthogonalDecomposition().pseudoInverse();
+      djjt = (*taskJacobianDot) * taskJacobian->transpose();
+      djjt += djjt.transpose();
+      djjtinv = -jjtinv * djjt * jjtinv;
+      jplusj = jplus * (*taskJacobian);
+      djplus = taskJacobianDot->transpose() * jjtinv + taskJacobian->transpose() * djjtinv;
+
+      intdjs_slow_ = expPhiSlow_ * intdjs_slow_ + (*taskJacobianDot) * slowFilteredS_ * timeStep_;
+      intdjs_fast_ = expPhiFast_ * intdjs_fast_ + (*taskJacobianDot) * fastFilteredS_ * timeStep_;
+      a_slow -= jplus * intdjs_slow_;
+      a_fast -= jplus * intdjs_fast_;
+      
+      additionalTerms = -fd_->H() * (jplus * (*taskJacobianDot) * slowFilteredS_ + djplus * intdjs_slow_);
+      additionalTerms.setZero();
+      K_jj = jplusj * K_ * jplusj;
+      //K_jj = jplusj;
+      //K_jj = (*taskJacobian).transpose()*(*taskJacobian);
+
+      // std::cout << " Mehdi jjt " << jjt << std::endl;
+      // std::cout << " Mehdi jjt eigen " << jjt.eigenvalues().transpose() << std::endl;
+      // std::cout << " Mehdi enableNullSpaceCompliance_ " << std::endl;
+      // std::cout << " Mehdi fastFilterWeight_ " << fastFilterWeight_ << std::endl;
+      // std::cout << " Mehdi a fast " << a_fast.transpose() << std::endl;
+      // std::cout << " Mehdi a fast " << a_fast.transpose() << std::endl;
+      // std::cout << " Mehdi a slow " << a_slow.transpose() << std::endl;
+    }
+
+    Eigen::VectorXd a = (1 - fastFilterWeight_) * a_slow + fastFilterWeight_ * a_fast;
+
+    /// compute the max torque allowed for the integral term
     Eigen::VectorXd torqueU_prime = torqueU_ * currentPerc_;
     Eigen::VectorXd torqueL_prime = torqueL_ * currentPerc_;
 
@@ -178,17 +265,8 @@ void IntegralTerm::computeTerm(const rbd::MultiBody & mb,
     currentPerc_ = expPhiSlow_ * currentPerc_ + (1 - expPhiSlow_) * targetPerc_;
     curMaxFBWrench_ = expPhiSlow_ * curMaxFBWrench_ + (1 - expPhiSlow_) * targetMaxFBWrench_;
 
-    if(intglTermType_ == PassivityBased)
-    {
-      coriolisTerm_ = C_ * filteredS;
-
-      /// CANCELED /// substract the Coriolis term to make sure that the whole integral term
-      /// CANCELED /// is respecting tha antiwindup
-      // torqueU_prime -= coriolisTerm_;
-      // torqueL_prime -= coriolisTerm_;
-    }
-
-    P_ = K_ * filteredS;
+    P_ = (1 - fastFilterWeight_)* K_jj *a_slow;
+    P_ += fastFilterWeight_ * K_ * a_fast;
 
     /// get the multiplier of the bound violation
     double epsilonU = (P_.array() / torqueU_prime.array()).maxCoeff();
@@ -196,7 +274,7 @@ void IntegralTerm::computeTerm(const rbd::MultiBody & mb,
     double epsilon = std::max(std::max(epsilonU, epsilonL), 1.);
 
     Eigen::MatrixXd serror(3, mb.nrDof());
-    serror.row(0) = filteredS.transpose();
+    serror.row(0) = ((1 - fastFilterWeight_) * a_slow + fastFilterWeight_ * a_fast).transpose();
     serror.row(1) = alphaVec_hat.transpose();
     serror.row(2) = alphaVec_ref.transpose();
 
@@ -205,10 +283,10 @@ void IntegralTerm::computeTerm(const rbd::MultiBody & mb,
 
     if(epsilon > 1)
     {
-      double dotprod = P_.dot(filteredS) / epsilon;
+      double dotprod = P_.dot(a) / epsilon;
       std::cout << "Mehdi QP Started" << std::endl;
 
-      if(solver_.solve(P_, filteredS, dotprod, torqueL_prime, torqueU_prime) == jrl::qp::TerminationStatus::SUCCESS)
+      if(solver_.solve(P_, a, dotprod, torqueL_prime, torqueU_prime) == jrl::qp::TerminationStatus::SUCCESS)
       {
         std::cout << "Mehdi Succeeded" << (solver_.solution() - P_).norm() << " " << (P_ / epsilon - P_).norm()
                   << std::endl;
@@ -235,18 +313,37 @@ void IntegralTerm::computeTerm(const rbd::MultiBody & mb,
         }
         else
         {
-          if(P_.dot(filteredS) < dotprod + 1e-5)
+          if(P_.dot(a) < dotprod + 1e-5)
           {
-            std::cout << "Mehdi dotProd not respected ! ref " << dotprod << " solution " << P_.dot(filteredS) << std::endl;
-            std::cerr << "Mehdi dotProd not respected ! ref " << dotprod << " solution " << P_.dot(filteredS) << std::endl;
+            std::cout << "Mehdi dotProd not respected ! ref " << dotprod << " solution " << P_.dot(a) << std::endl;
+            std::cerr << "Mehdi dotProd not respected ! ref " << dotprod << " solution " << P_.dot(a) << std::endl;
           }
         }
       }
     }
 
+
+
+    if(intglTermType_ == PassivityBased)
+    {
+      coriolisTerm_ = C_ * a;
+    }
+
+      /// CANCELED /// substract the Coriolis term to make sure that the whole integral term
+      /// CANCELED /// is respecting tha antiwindup
+      // torqueU_prime -= coriolisTerm_;
+      // torqueL_prime -= coriolisTerm_;
     if(intglTermType_ == PassivityBased)
     {
       P_ += coriolisTerm_;
+    }
+    P_ += additionalTerms;
+
+    if (enableNullSpaceCompliance_)
+    {
+      // std::cout << "Mehdi P" << P_.transpose() << std::endl;
+      // std::cout << "Mehdi additionalTerms" << additionalTerms.transpose() << std::endl;
+      // std::cout << "Mehdi coriolisTerm_" << coriolisTerm_.transpose() << std::endl;
     }
 
     computeGammaD();
@@ -327,6 +424,11 @@ void IntegralTerm::computeGain(const rbd::MultiBody & mb, const rbd::MultiBodyCo
     C_ = coriolis_.coriolis(mb, mbc_real);
     elapsed_.at("computeFbTerm-Gain-Coriolis") = (int)(clock() - time);
   }
+}
+
+void IntegralTerm::enableNullSpaceCompliance(bool b)
+{
+  enableNullSpaceCompliance_ = b;
 }
 
 /**
