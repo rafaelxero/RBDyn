@@ -206,9 +206,8 @@ void IntegralTerm::computeTerm(const rbd::MultiBody & mb,
 
       Eigen::MatrixXd jjt, jjtinv, jplus, djjt, djjtinv, djplus, jplusj;
       jjt = (*taskJacobian) * taskJacobian->transpose();
-      identityDiag.setConstant(0.01 * jjt.eigenvalues().real().array().maxCoeff());
+      identityDiag.setConstant(0.0001 );
       identity = identityDiag.asDiagonal();
-      identity.setZero();
       jjtinv = (jjt + identity).inverse();
       jplus = taskJacobian->transpose() * jjtinv;
       //jplus = taskJacobian->completeOrthogonalDecomposition().pseudoInverse();
@@ -230,7 +229,7 @@ void IntegralTerm::computeTerm(const rbd::MultiBody & mb,
       //K_jj = (*taskJacobian).transpose()*(*taskJacobian);
 
       // std::cout << " Mehdi jjt " << jjt << std::endl;
-      // std::cout << " Mehdi jjt eigen " << jjt.eigenvalues().transpose() << std::endl;
+      //std::cout << " Mehdi jjt eigen " << jjt.eigenvalues().transpose() << std::endl;
       // std::cout << " Mehdi enableNullSpaceCompliance_ " << std::endl;
       // std::cout << " Mehdi fastFilterWeight_ " << fastFilterWeight_ << std::endl;
       // std::cout << " Mehdi a fast " << a_fast.transpose() << std::endl;
